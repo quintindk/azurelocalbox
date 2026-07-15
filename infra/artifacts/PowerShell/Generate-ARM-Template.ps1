@@ -64,6 +64,14 @@ $storageBIPs += " ]"
 # Create diagnostics storage account name
 $diagnosticsStorageName = "localboxdiagsa$guid"
 
+# Create cluster witness storage account name.
+# NOTE: the Azure Local cluster ARM template CREATES this storage account in the
+# deployment (registration) resource group. In the two-RG / governed model the
+# staging storage account lives in a DIFFERENT (nodes) resource group, so reusing
+# $env:stagingStorageAccountName here causes a global name collision at preflight.
+# Use a fresh, RG-local unique name instead.
+$witnessStorageName = "localboxwit$guid"
+
 # Replace placeholder values in ARM template with real values
 $AzLocalParams = "$env:LocalBoxDir\azlocal.parameters.json"
 (Get-Content -Path $AzLocalParams) -replace 'clusterName-staging', $LocalBoxConfig.ClusterName | Set-Content -Path $AzLocalParams
@@ -83,7 +91,7 @@ $AzLocalParams = "$env:LocalBoxDir\azlocal.parameters.json"
 (Get-Content -Path $AzLocalParams) -replace 'dnsServers-staging', $dns | Set-Content -Path $AzLocalParams
 (Get-Content -Path $AzLocalParams) -replace 'keyVaultName-staging', $keyVaultName | Set-Content -Path $AzLocalParams
 (Get-Content -Path $AzLocalParams) -replace 'physicalNodesSettings-staging', $physicalNodesSettings | Set-Content -Path $AzLocalParams
-(Get-Content -Path $AzLocalParams) -replace 'ClusterWitnessStorageAccountName-staging', $env:stagingStorageAccountName | Set-Content -Path $AzLocalParams
+(Get-Content -Path $AzLocalParams) -replace 'ClusterWitnessStorageAccountName-staging', $witnessStorageName | Set-Content -Path $AzLocalParams
 (Get-Content -Path $AzLocalParams) -replace 'diagnosticStorageAccountName-staging', $diagnosticsStorageName | Set-Content -Path $AzLocalParams
 (Get-Content -Path $AzLocalParams) -replace 'storageNicAVLAN-staging', $LocalBoxConfig.StorageAVLAN | Set-Content -Path $AzLocalParams
 (Get-Content -Path $AzLocalParams) -replace 'storageNicBVLAN-staging', $LocalBoxConfig.StorageBVLAN | Set-Content -Path $AzLocalParams

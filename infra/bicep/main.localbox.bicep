@@ -226,6 +226,21 @@ module vmRoleWeKeyVaultAdmin 'modules/rgRoleAssignment.bicep' = {
   }
 }
 
+// The Azure Local cluster ARM template creates role assignments during
+// validate/deploy (Arc machine role grants). The VM managed identity therefore
+// needs to be able to write role assignments in the WE RG. Role Based Access
+// Control Administrator provides this and is NOT blocked by the subscription's
+// ABAC condition (which only forbids Owner + User Access Administrator).
+module vmRoleWeRbacAdmin 'modules/rgRoleAssignment.bicep' = {
+  name: 'vmRoleWeRbacAdmin'
+  scope: azureLocalRg
+  params: {
+    principalId: hostDeployment.outputs.vmPrincipalId
+    roleDefinitionGuid: 'f58310d9-a9f6-439a-9e8d-f62e7b41a168' // Role Based Access Control Administrator
+    nameSalt: 'rbacadmin'
+  }
+}
+
 module customerUsageAttribution 'mgmt/customerUsageAttribution.bicep' = {
   name: 'pid-${customerUsageAttributionDeploymentName}'
   scope: nodesRg
