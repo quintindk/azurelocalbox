@@ -1,0 +1,10 @@
+.env
+.envrc
+.azd
+.azure
+
+# azd / bicep build artifacts
+.azure/
+infra/bicep/**/*.json
+!infra/bicep/**/*.parameters.json
+!infra/bicep/main.parameters.json

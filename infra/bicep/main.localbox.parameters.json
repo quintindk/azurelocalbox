@@ -1,0 +1,60 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "tenantId": {
+            "value": "${SPN_TENANT_ID}"
+        },
+        "spnProviderId": {
+            "value": "${SPN_PROVIDER_ID}"
+        },
+        "windowsAdminUsername": {
+            "value": "${JS_WINDOWS_ADMIN_USERNAME}"
+        },
+        "windowsAdminPassword": {
+            "value": "${JS_WINDOWS_ADMIN_PASSWORD}"
+        },
+        "vmSize": {
+            "value": "${JS_VM_SIZE=Standard_E32s_v6}"
+        },
+        "nodesResourceGroupName": {
+            "value": "${JS_NODES_RG=rg-localbox-nodes-san-1}"
+        },
+        "azureLocalResourceGroupName": {
+            "value": "${JS_AZURELOCAL_RG=rg-localbox-azlocal-we-1}"
+        },
+        "location": {
+            "value": "${JS_LOCATION=southafricanorth}"
+        },
+        "azureLocalInstanceLocation": {
+            "value": "${JS_AZURELOCAL_LOCATION=westeurope}"
+        },
+        "spokeVirtualNetworkName": {
+            "value": "${JS_SPOKE_VNET=vnet-az-test-wkl-san-1}"
+        },
+        "spokeSubnetName": {
+            "value": "${JS_SPOKE_SUBNET=snet-default}"
+        },
+        "spokeVirtualNetworkResourceGroup": {
+            "value": "${JS_SPOKE_VNET_RG=rg-az-test-wkl-san-1}"
+        },
+        "spokeVirtualNetworkSubscriptionId": {
+            "value": "${JS_SPOKE_VNET_SUB=${AZURE_SUBSCRIPTION_ID}}"
+        },
+        "rdpPort": {
+            "value": "${JS_RDP_PORT=3389}"
+        },
+        "githubAccount": {
+            "value": "${JS_GITHUB_ACCOUNT=microsoft}"
+        },
+        "githubBranch": {
+            "value": "${JS_GITHUB_BRANCH=main}"
+        },
+        "autoDeployClusterResource": {
+            "value": "${JS_AUTO_DEPLOY_CLUSTER_RESOURCE=true}"
+        },
+        "autoUpgradeClusterResource": {
+            "value": "${JS_AUTO_UPGRADE_CLUSTER_RESOURCE=false}"
+        }
+    }
+}
