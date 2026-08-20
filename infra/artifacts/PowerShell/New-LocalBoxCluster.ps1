@@ -65,11 +65,17 @@ function Assert-VhdChecksum {
     Write-Host "$Name has valid checksum. Continuing..."
 }
 
-# NOTE: https://azlocalvhds.blob.core.windows.net/images/AzLocal2604.vhdx returns
-# HTTP 403 AccountIsDisabled — that storage account is dead. Use the Jumpstart
-# production image, which is live and is the one upstream ships.
-Invoke-VhdDownload -Name 'AzLocal VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
-Invoke-VhdDownload -Name 'AzLocal SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
+# Image source note:
+#   azlocalvhds.blob.core.windows.net (used by upstream main) returns HTTP 403
+#   AccountIsDisabled — that storage account is dead, so the download silently
+#   produced nothing.
+#   AzLocal2509 on jumpstartprodsg downloads fine but is REJECTED by the Azure
+#   Local deployment service with "Unsupported Azure Stack HCI OS Version"
+#   at the localcluster-validate stage.
+#   AzLocal2604 is published on jumpstartprodsg (12.6 GB, HTTP 206) and is the
+#   image upstream intended to move to. Use that.
+Invoke-VhdDownload -Name 'AzLocal VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2604.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
+Invoke-VhdDownload -Name 'AzLocal SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2604.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
 
 Assert-VhdChecksum -Name 'AzL-node.vhdx' -VhdPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx" -ShaPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
 
