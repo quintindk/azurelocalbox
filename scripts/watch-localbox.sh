@@ -70,7 +70,17 @@ check() {
   fi
 
   # --- liveness: the tag lies, the log does not ------------------------------
-  if [ "$logage" != "?" ] && [ "$logage" != "-1" ]; then
+  # EXCEPTION: while an ARM deployment is Running, the in-VM script is blocked
+  # waiting on Azure and legitimately writes nothing for 30+ minutes. ARM is
+  # then the authoritative liveness signal, so a quiet log is expected, not
+  # evidence of death. Only treat a stale log as fatal when nothing is running
+  # server-side either.
+  if [ "$validate" = "Running" ]; then
+    if [ "$logage" != "?" ] && [ "$logage" != "-1" ] \
+       && awk -v a="$logage" -v s="$STALE_MINUTES" 'BEGIN{exit !(a>s)}'; then
+      echo "[$(ts)] note: log quiet ${logage}m, but localcluster-validate is Running — expected, ARM-bound wait."
+    fi
+  elif [ "$logage" != "?" ] && [ "$logage" != "-1" ]; then
     if awk -v a="$logage" -v s="$STALE_MINUTES" 'BEGIN{exit !(a>s)}'; then
       echo "[$(ts)] WARNING: log stale for ${logage}m (>${STALE_MINUTES}m) while tag says '${stage}'."
       echo "[$(ts)] This is the 'tag lies' failure mode. Log tail:"
