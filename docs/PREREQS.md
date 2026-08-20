@@ -6,14 +6,10 @@
   az account set --subscription 8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea
   ```
 - Ensure you are **Owner** on the subscription (PIM activate if required). The
-  deploying user assigns Owner on the two created RGs to the deployment SP via the
-  wrapper's `rgRoleAssignment` modules.
-- Service principal (already created): client id
-  `8bdd3df0-d1c0-470d-adf8-fa6056acabb1`.
-  ```sh
-  azd env set SPN_CLIENT_ID 8bdd3df0-d1c0-470d-adf8-fa6056acabb1
-  ```
-  `preprovision` resolves its object id (`SPN_OBJECT_ID`) and the tenant id.
+  deploying user creates both RGs; all role assignments in the templates target
+  the client VM's system-assigned managed identity.
+- No service principal is required. `SPN_CLIENT_ID` / `SPN_OBJECT_ID` are not read
+  by any template and are no longer requested by `preprovision`.
 
 ## 2. Resource providers
 Registered idempotently by `infra/hooks/preprovision.sh`:
@@ -63,7 +59,6 @@ azd env set JS_GITHUB_BRANCH  localbox-governed-san
 ## Deploy / teardown
 ```sh
 azd env new localbox-san
-azd env set SPN_CLIENT_ID 8bdd3df0-d1c0-470d-adf8-fa6056acabb1
 azd env set JS_GITHUB_ACCOUNT <fork>
 azd env set JS_GITHUB_BRANCH  <branch>
 azd provision      # creates 2 RGs + client VM; in-VM automation runs ~1-3h

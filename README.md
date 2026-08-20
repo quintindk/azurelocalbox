@@ -60,9 +60,11 @@ patched to resolve the client VM across the subscription for tag propagation.
 See [`docs/PREREQS.md`](docs/PREREQS.md). Summary:
 
 1. `az login`; select the target subscription (PIM to Owner if required).
-2. A service principal (client id `SPN_CLIENT_ID`) — already created for this
-   project: `8bdd3df0-d1c0-470d-adf8-fa6056acabb1`. The deploying **user** (Owner
-   on the subscription) assigns Owner on the two created RGs via the wrapper.
+2. **No service principal is required.** The deployment runs as the signed-in
+   `az`/`azd` user, who must be Owner on the subscription (PIM activate if
+   required). `main.localbox.bicep` passes only `spnProviderId` to the templates,
+   and every role assignment it creates targets the client VM's system-assigned
+   managed identity — not an SP.
 3. **Fork hosting for patched in-VM scripts.** Because `artifacts/PowerShell/*` are
    patched, the client VM must download **our** copies. Push the vendored+patched
    `azure_jumpstart_localbox/` tree to a fork of `azure_arc` and set:
@@ -75,7 +77,6 @@ See [`docs/PREREQS.md`](docs/PREREQS.md). Summary:
 
 ```sh
 azd env new localbox-san
-azd env set SPN_CLIENT_ID 8bdd3df0-d1c0-470d-adf8-fa6056acabb1
 azd env set JS_GITHUB_ACCOUNT quintindk
 azd env set JS_GITHUB_BRANCH localbox-governed-san
 # optional overrides: JS_LOCATION, JS_AZURELOCAL_LOCATION, JS_SPOKE_*, JS_VM_SIZE
@@ -83,9 +84,9 @@ azd provision
 ```
 
 The client VM authenticates to Azure with its **system-assigned managed identity**
-(`Connect-AzAccount -Identity`) — no SP client secret is consumed by the in-VM
-automation. The SP (`SPN_CLIENT_ID`) is used only as the azd deployment principal;
-the VM's managed identity is granted the roles it needs by `host.bicep`.
+(`Connect-AzAccount -Identity`) — no service principal secret is involved anywhere
+in the flow. The VM's managed identity is granted the roles it needs by
+`host.bicep`; the azd deployment itself runs as the signed-in user.
 
 The in-VM automation continues for ~1–3 hours after `azd provision` returns.
 

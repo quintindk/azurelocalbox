@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Assumes:
 #   * You are logged in to az and the target subscription is selected.
-#   * The service principal already exists; its client id is in SPN_CLIENT_ID.
+#   * The signed-in user is Owner on the target subscription.
 #   * The LZ spoke (vnet-az-test-wkl-san-1/snet-default) already exists.
 # =============================================================================
 
@@ -75,21 +75,14 @@ if [ -z "${SPN_PROVIDER_ID:-}" ]; then
   azd env set SPN_PROVIDER_ID "$spnProviderId"
 fi
 
-# ---- Deployment service principal (already created; client id provided) ----
-if [ -z "${SPN_CLIENT_ID:-}" ]; then
-  echo "ERROR: SPN_CLIENT_ID is not set. This project expects an existing service principal." >&2
-  echo "Set it with: azd env set SPN_CLIENT_ID <appId>" >&2
-  exit 1
-fi
-# Resolve the SP object (principal) id used for RG Owner role assignments.
-if [ -z "${SPN_OBJECT_ID:-}" ]; then
-  spnObjectId=$(az ad sp show --id "$SPN_CLIENT_ID" --query id -o tsv 2>/dev/null || echo "")
-  if [ -z "$spnObjectId" ]; then
-    echo "ERROR: Could not resolve object id for SP $SPN_CLIENT_ID." >&2
-    exit 1
-  fi
-  azd env set SPN_OBJECT_ID "$spnObjectId"
-fi
+# ---- Deployment principal ----
+# The deployment runs as the signed-in az/azd user (Owner on the subscription).
+# No service principal is required: main.localbox.bicep passes only spnProviderId
+# to the templates, and every role assignment in it targets the client VM's
+# system-assigned managed identity (hostDeployment.outputs.vmPrincipalId), not an
+# SP. SPN_CLIENT_ID / SPN_OBJECT_ID are therefore not read by any template and the
+# gate that required them has been removed.
+
 # Tenant id
 if [ -z "${SPN_TENANT_ID:-}" ]; then
   azd env set SPN_TENANT_ID "$(az account show --query tenantId -o tsv)"
