@@ -28,34 +28,56 @@ Write-Host "[Build cluster - Step 1/11] Downloading LocalBox VHDs" -ForegroundCo
 $Env:AZCOPY_BUFFER_GB = 4
 Write-Output "Downloading nested VMs VHDX files. This can take some time, hold tight..."
 
-#azcopy cp 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.vhdx' "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx" --recursive=true --check-length=false --log-level=ERROR
-#azcopy cp 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.sha256' "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256" --recursive=true --check-length=false --log-level=ERROR
-
-azcopy cp 'https://azlocalvhds.blob.core.windows.net/images/AzLocal2604.vhdx' "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx" --recursive=true --check-length=false --log-level=ERROR
-azcopy cp 'https://azlocalvhds.blob.core.windows.net/images/AzLocal2604.sha256' "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256" --recursive=true --check-length=false --log-level=ERROR
-
-$checksum = Get-FileHash -Path "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
-$hash = Get-Content -Path "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
-if ($checksum.Hash -eq $hash) {
-    Write-Host "AZSCHI.vhdx has valid checksum. Continuing..."
+function Invoke-VhdDownload {
+    param(
+        [Parameter(Mandatory)][string]$Uri,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][string]$Name
+    )
+    azcopy cp $Uri $Destination --recursive=true --check-length=false --log-level=ERROR
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name download failed (azcopy exit $LASTEXITCODE) from $Uri"
+    }
+    if (-not (Test-Path $Destination)) {
+        throw "$Name download reported success but $Destination is missing (source: $Uri)"
+    }
 }
-else {
-    Write-Error "AZSCHI.vhdx is corrupt. Aborting deployment. Re-run C:\LocalBox\LocalBoxLogonScript.ps1 to retry"
-    throw
+
+function Assert-VhdChecksum {
+    param(
+        [Parameter(Mandatory)][string]$VhdPath,
+        [Parameter(Mandatory)][string]$ShaPath,
+        [Parameter(Mandatory)][string]$Name
+    )
+    # Both Get-FileHash and Get-Content return $null for a missing file, and
+    # $null -eq $null is TRUE — a missing VHDX previously passed this gate and
+    # failed ~40 minutes later at the copy step. Verify existence explicitly.
+    if (-not (Test-Path $VhdPath)) { throw "$Name checksum check failed: $VhdPath does not exist" }
+    if (-not (Test-Path $ShaPath)) { throw "$Name checksum check failed: $ShaPath does not exist" }
+    $checksum = (Get-FileHash -Path $VhdPath -ErrorAction Stop).Hash
+    $hash = (Get-Content -Path $ShaPath -ErrorAction Stop).Trim()
+    if ([string]::IsNullOrWhiteSpace($checksum) -or [string]::IsNullOrWhiteSpace($hash)) {
+        throw "$Name checksum check failed: empty hash value"
+    }
+    if ($checksum -ne $hash) {
+        throw "$Name is corrupt (expected $hash, got $checksum). Re-run C:\LocalBox\LocalBoxLogonScript.ps1 to retry"
+    }
+    Write-Host "$Name has valid checksum. Continuing..."
 }
 
-azcopy cp https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.vhdx "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx" --recursive=true --check-length=false --log-level=ERROR
-azcopy cp https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.sha256 "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256" --recursive=true --check-length=false --log-level=ERROR
+# NOTE: https://azlocalvhds.blob.core.windows.net/images/AzLocal2604.vhdx returns
+# HTTP 403 AccountIsDisabled — that storage account is dead. Use the Jumpstart
+# production image, which is live and is the one upstream ships.
+Invoke-VhdDownload -Name 'AzLocal VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
+Invoke-VhdDownload -Name 'AzLocal SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2509.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
 
-$checksum = Get-FileHash -Path "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx"
-$hash = Get-Content -Path "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
-if ($checksum.Hash -eq $hash) {
-    Write-Host "GUI.vhdx has valid checksum. Continuing..."
-}
-else {
-    Write-Error "GUI.vhdx is corrupt. Aborting deployment. Re-run C:\LocalBox\LocalBoxLogonScript.ps1 to retry"
-    throw
-}
+Assert-VhdChecksum -Name 'AzL-node.vhdx' -VhdPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx" -ShaPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
+
+Invoke-VhdDownload -Name 'GUI VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx"
+Invoke-VhdDownload -Name 'GUI SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
+
+Assert-VhdChecksum -Name 'GUI.vhdx' -VhdPath "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx" -ShaPath "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
+
 
 # Set credentials
 $localCred = new-object -typename System.Management.Automation.PSCredential `
