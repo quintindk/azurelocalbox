@@ -65,22 +65,38 @@ function Assert-VhdChecksum {
     Write-Host "$Name has valid checksum. Continuing..."
 }
 
-# Image source note:
-#   azlocalvhds.blob.core.windows.net (used by upstream main) returns HTTP 403
-#   AccountIsDisabled — that storage account is dead, so the download silently
-#   produced nothing.
-#   AzLocal2509 on jumpstartprodsg downloads fine but is REJECTED by the Azure
-#   Local deployment service with "Unsupported Azure Stack HCI OS Version"
-#   at the localcluster-validate stage.
-#   AzLocal2604 is published on jumpstartprodsg (12.6 GB, HTTP 206) and is the
-#   image upstream intended to move to. Use that.
-Invoke-VhdDownload -Name 'AzLocal VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2604.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
-Invoke-VhdDownload -Name 'AzLocal SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod/AzLocal2604.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
+# ---------------------------------------------------------------------------
+# Image sources — SINGLE SOURCE OF TRUTH. Bump $azLocalImage here only.
+#
+# History (do not repeat these):
+#   * azlocalvhds.blob.core.windows.net (upstream main, as of 2026-08-20)
+#     returns HTTP 403 AccountIsDisabled. The account is dead and azcopy's
+#     failure was silent, producing a 0-byte result that passed the old
+#     checksum gate.
+#   * AzLocal2509 on jumpstartprodsg downloads fine but the Azure Local
+#     deployment service REJECTS it at localcluster-validate with
+#     "Unsupported Azure Stack HCI OS Version".
+#   * AzLocal2604 on jumpstartprodsg is live (12.6 GB) and supported.
+#
+# infra/hooks/preprovision.sh probes these exact URLs before any Azure
+# resource is created, so a dead image fails the deploy in seconds instead of
+# ~90 minutes into the in-VM run. If you bump the version here, the preflight
+# picks it up automatically only if you bump JS_AZLOCAL_IMAGE too.
+# ---------------------------------------------------------------------------
+$azLocalImageBase = 'https://jumpstartprodsg.blob.core.windows.net/jslocal/localbox/prod'
+$azLocalImage     = if ($env:azLocalImage) { $env:azLocalImage } else { 'AzLocal2604' }
+$guiImageBase     = 'https://jumpstartprodsg.blob.core.windows.net/hcibox23h2'
+$guiImage         = 'WinServerApril2024'
+
+Write-Host "AzLocal image: $azLocalImage   GUI image: $guiImage"
+
+Invoke-VhdDownload -Name 'AzLocal VHDX'   -Uri "$azLocalImageBase/$azLocalImage.vhdx"   -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx"
+Invoke-VhdDownload -Name 'AzLocal SHA256' -Uri "$azLocalImageBase/$azLocalImage.sha256" -Destination "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
 
 Assert-VhdChecksum -Name 'AzL-node.vhdx' -VhdPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.vhdx" -ShaPath "$($LocalBoxConfig.Paths.VHDDir)\AzL-node.sha256"
 
-Invoke-VhdDownload -Name 'GUI VHDX' -Uri 'https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.vhdx' -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx"
-Invoke-VhdDownload -Name 'GUI SHA256' -Uri 'https://jumpstartprodsg.blob.core.windows.net/hcibox23h2/WinServerApril2024.sha256' -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
+Invoke-VhdDownload -Name 'GUI VHDX'   -Uri "$guiImageBase/$guiImage.vhdx"   -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx"
+Invoke-VhdDownload -Name 'GUI SHA256' -Uri "$guiImageBase/$guiImage.sha256" -Destination "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
 
 Assert-VhdChecksum -Name 'GUI.vhdx' -VhdPath "$($LocalBoxConfig.Paths.VHDDir)\GUI.vhdx" -ShaPath "$($LocalBoxConfig.Paths.VHDDir)\GUI.sha256"
 
