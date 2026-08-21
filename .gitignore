@@ -8,3 +8,10 @@
 infra/bicep/**/*.json
 !infra/bicep/**/*.parameters.json
 !infra/bicep/main.parameters.json
+
+# local run logs
+.logs/
+
+# accreditation evidence screenshots — contain tenant, subscription and
+# workstation detail; kept locally, never committed
+docs/accreditation/evidence/
