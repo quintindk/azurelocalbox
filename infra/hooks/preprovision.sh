@@ -25,6 +25,7 @@ for rp in \
   Microsoft.HybridConnectivity \
   Microsoft.HybridContainerService \
   Microsoft.Attestation \
+  Microsoft.EdgeMarketPlace \
   Microsoft.Compute ; do
   az provider register --namespace "$rp" >/dev/null 2>&1 || true
 done
