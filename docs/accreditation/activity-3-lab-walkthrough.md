@@ -588,3 +588,17 @@ diagnosis.
 | Monitoring with Insights | https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-single-23h2 |
 | Solution updates | https://learn.microsoft.com/en-us/azure/azure-local/update/about-updates-23h2 |
 | Arc agent and connectivity checks | https://learn.microsoft.com/en-us/azure/azure-arc/servers/azcmagent |
+| Environment / readiness checker | https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker |
+| Azure Local Supportability TSGs | https://github.com/Azure/AzureLocal-Supportability/tree/main/TSG |
+| LENS workbook | https://github.com/Azure/AzureLocal-LENS-Workbook |
+
+### Internal guidance
+
+This walkthrough was written independently of the SSG IPKIT workshop material and
+reconciled against it afterwards. Read the gap analysis before the next run.
+
+| Item | Location |
+|---|---|
+| IPKIT Lab Manual (L400, 12 optional M09 labs) | `SSG IP Development - IPKIT/Lab instructions - Optional module/Lab Manual.html` |
+| IPKIT instructor guidance | `SSG IP Development - IPKIT/Lab instructions - Optional module/Instructor-guidance.md` |
+| Reconciliation of the two | [`ipkit-gap-analysis.md`](ipkit-gap-analysis.md) |
