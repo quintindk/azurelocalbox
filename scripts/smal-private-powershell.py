@@ -75,6 +75,7 @@ def main(script, name):
     record = {'beganAtSast': BASE['now'](), 'status': 'pending', 'commit': head, 'script': relative,
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
+    record['localPort'] = port
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')
     command = ['az', 'network', 'bastion', 'tunnel', '--subscription', '702382d0-3722-4630-8983-5580b92f0c1a',
@@ -118,8 +119,10 @@ def main(script, name):
         record['status'] = 'failed-inspect-before-retry'
         record['errorType'] = type(error).__name__
     finally:
-        if tunnel.poll() is None:
+        try:
             os.killpg(tunnel.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             tunnel.wait(timeout=10)
         except subprocess.TimeoutExpired:
@@ -127,7 +130,11 @@ def main(script, name):
             tunnel.wait(timeout=5)
         # Tunnel diagnostics can contain signed URLs. Never export raw output.
         record['tunnelProcessClosed'] = True
-        record['localSocketAbsent'] = not subprocess.run(['ss', '-H', '-ltn', 'sport', '=', ':' + str(port)], capture_output=True, text=True, check=True).stdout.strip()
+        for _ in range(10):
+            record['localSocketAbsent'] = not subprocess.run(['ss', '-H', '-ltn', 'sport', '=', ':' + str(port)], capture_output=True, text=True, check=True).stdout.strip()
+            if record['localSocketAbsent']:
+                break
+            time.sleep(0.2)
         record['finishedAtSast'] = BASE['now']()
         target.write_text(json.dumps(record, indent=2) + '\n')
     print(json.dumps(record, indent=2))

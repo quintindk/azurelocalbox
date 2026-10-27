@@ -49,8 +49,8 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, resume_verified=False):
-    if inspect_retry:
+def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, resume_verified=False, inspect_access=False):
+    if inspect_retry or inspect_access:
         inspect = True
     if inspect and retry_reconciled:
         raise RuntimeError('Inspection and reconciled apply are separate operations')
@@ -59,6 +59,8 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
         if inspect or retry_reconciled:
             raise RuntimeError('Resume is a separate operation')
         target = OUT / 'private-ssh-setup-resume1.json'
+    if inspect_access:
+        target = OUT / 'private-ssh-inspection3.json'
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -79,9 +81,14 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
     if not isinstance(admin, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,31}', admin):
         raise RuntimeError('Unexpected existing admin account')
     if inspect:
-        prior = json.loads((OUT / ('private-ssh-setup-retry1.json' if inspect_retry else 'private-ssh-setup.json')).read_text())
-        if prior.get('guestErrorLabel') != ('Guest firewall scope differs' if inspect_retry else 'Active non-default SSH configuration found'):
-            raise RuntimeError('Inspection is only for the known rejected initial setup')
+        if inspect_access:
+            prior = json.loads((OUT / 'private-ssh-setup-resume1.json').read_text())
+            if prior.get('status') != 'complete-host-key-pinned-login-not-yet-tested':
+                raise RuntimeError('Completed setup evidence required for listener inspection')
+        else:
+            prior = json.loads((OUT / ('private-ssh-setup-retry1.json' if inspect_retry else 'private-ssh-setup.json')).read_text())
+            if prior.get('guestErrorLabel') != ('Guest firewall scope differs' if inspect_retry else 'Active non-default SSH configuration found'):
+                raise RuntimeError('Inspection is only for the known rejected initial setup')
     if retry_reconciled:
         prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
         inspection = json.loads((OUT / 'private-ssh-inspection1.json').read_text())
@@ -135,6 +142,7 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
                        'forwarding', 'remoteAddress', 'remoteAddressObserved', 'defaultShell', 'hostPublicKey', 'configSha256', 'rebootPerformed', 'bootstrapApplied'}
             if inspect:
                 allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly', 'firewall', 'markerStatus', 'defaultSshAllowRuleEnabled'}
+                allowed |= {'servicePath', 'listeners', 'firewallProgram', 'firewallService', 'firewallProfiles', 'profileDefaults', 'recentSshEvents'}
             if set(payload) - allowed or payload.get('computer', '').lower() != H['VM'].lower():
                 raise RuntimeError('Unexpected SSH setup evidence')
             if inspect:
@@ -164,5 +172,6 @@ if __name__ == '__main__':
     parser.add_argument('--retry-reconciled', action='store_true')
     parser.add_argument('--inspect-retry', action='store_true')
     parser.add_argument('--resume-verified', action='store_true')
+    parser.add_argument('--inspect-access', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry, args.resume_verified))
+    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry, args.resume_verified, args.inspect_access))

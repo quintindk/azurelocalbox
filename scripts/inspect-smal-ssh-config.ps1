@@ -29,5 +29,15 @@ $markerStatus = if (Test-Path (Join-Path $dir 'localbox-private-ssh.json')) { (G
     firewall = $firewall
     markerStatus = $markerStatus
     defaultSshAllowRuleEnabled = @((Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue) | Select-Object -ExpandProperty Enabled | ForEach-Object ToString)
+    servicePath = (Get-CimInstance Win32_Service -Filter "Name='sshd'").PathName
+    listeners = @(Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, OwningProcess)
+    firewallProgram = @($rule | Get-NetFirewallApplicationFilter | Select-Object -ExpandProperty Program)
+    firewallService = @($rule | Get-NetFirewallServiceFilter | Select-Object -ExpandProperty Service)
+    firewallProfiles = $rule.Profile.ToString()
+    profileDefaults = @(Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction)
+    recentSshEvents = @(Get-WinEvent -FilterHashtable @{ LogName = 'OpenSSH/Operational'; StartTime = (Get-Date).AddMinutes(-20) } -MaxEvents 10 -ErrorAction SilentlyContinue | ForEach-Object {
+        $category = if ($_.Message -match 'Accepted publickey') { 'accepted-publickey' } elseif ($_.Message -match 'Failed publickey') { 'failed-publickey' } elseif ($_.Message -match 'listening on') { 'listening' } elseif ($_.Message -match 'Connection') { 'connection-event' } else { 'other' }
+        @{ atUtc = $_.TimeCreated.ToUniversalTime().ToString('o'); id = $_.Id; category = $category }
+    })
     readOnly = $true
 } | ConvertTo-Json -Depth 5 -Compress
