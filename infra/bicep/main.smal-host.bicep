@@ -25,6 +25,9 @@ param location string = 'southafricanorth'
 @allowed([true])
 param hostPlanApproved bool
 
+@description('Reconciled retry only: reuse the existing private NIC without writing its properties.')
+param reuseExistingNic bool = false
+
 var vmName = 'LocalBox-Client'
 var tags = {
   owner: 'quintindekok'
@@ -44,7 +47,7 @@ resource subnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing 
   name: 'snet-localbox-host'
 }
 
-resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
+resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = if (!reuseExistingNic) {
   name: '${vmName}-NIC'
   location: location
   tags: tags
@@ -97,7 +100,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
     }
     networkProfile: {
       networkInterfaces: [{
-        id: nic.id
+        id: resourceId('Microsoft.Network/networkInterfaces', '${vmName}-NIC')
         properties: { deleteOption: 'Detach' }
       }]
     }
@@ -112,12 +115,15 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
     }
     priority: 'Regular'
   }
+  dependsOn: [nic]
 }
 
 output hostPlanApprovalSupplied bool = hostPlanApproved
 output vmResourceId string = vm.id
-output nicResourceId string = nic.id
+output nicResourceId string = resourceId('Microsoft.Network/networkInterfaces', '${vmName}-NIC')
 output hostSubnetResourceId string = subnet.id
-output privateIp string = nic.properties.ipConfigurations[0].properties.privateIPAddress
+// Reuse mode deliberately performs no NIC read/write in this template; use live readback.
+output privateIp string = reuseExistingNic ? '' : nic!.properties.ipConfigurations[0].properties.privateIPAddress
+output reusedExistingNic bool = reuseExistingNic
 output managedIdentityPrincipalId string = vm.identity.principalId
 output bootstrapDeployed bool = false

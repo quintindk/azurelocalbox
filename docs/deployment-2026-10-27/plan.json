@@ -1,7 +1,7 @@
 {
   "taskId": "task_smal_localbox_landing_zone_20261027",
   "reference": "REL-287",
-  "status": "host-deployment-attempted-vm-rejected-standard-security-feature-not-registered",
+  "status": "standard-security-feature-registered-reconciling-host-only-retry",
   "tenantId": "c6e67968-af25-4557-ab8b-06b693048d3b",
   "subscriptionId": "8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea",
   "resourceGroup": "rg-localbox-nodes-san-1",
@@ -70,7 +70,7 @@
   },
   "gates": {
     "hostOnlyDeploymentApproval": "approved",
-    "standardSecurityCapability": "NotRegistered-subscription-feature-change-not-authorised",
+    "standardSecurityCapability": "passed",
     "labMetadataDisposition": "omit-cost-centre-and-review-date-tags-per-owner-lab-instruction",
     "currentAzureAndHostNetworkReadback": "passed-point-in-time",
     "skuQuotaAndImmutableWindowsImageAvailability": "passed-point-in-time-not-capacity-reservation",

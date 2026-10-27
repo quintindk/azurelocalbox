@@ -117,13 +117,15 @@ def compile_template():
     return hashlib.sha256(source.read_bytes()).hexdigest()
 
 
-def secure_arm(verb, username, password):
+def secure_arm(verb, username, password, deployment_name=NAME, reuse_existing_nic=False):
     parameters = {'$schema': 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#',
                   'contentVersion': '1.0.0.0', 'parameters': {
                       'adminUsername': {'value': username}, 'adminPassword': {'value': password},
                       'imageVersion': {'value': '26100.33674.261024'}, 'hostPlanApproved': {'value': True}}}
+    if reuse_existing_nic:
+        parameters['parameters']['reuseExistingNic'] = {'value': True}
     command = ['az', 'deployment', 'group', verb, '--subscription', SUB, '-g', RG,
-               '--name', NAME, '--template-file', str(TEMPLATE), '--parameters', '@/dev/stdin',
+               '--name', deployment_name, '--template-file', str(TEMPLATE), '--parameters', '@/dev/stdin',
                '-o', 'json', '--only-show-errors']
     if verb == 'what-if':
         command.extend(['--no-pretty-print', '--result-format', 'FullResourcePayloads'])

@@ -144,6 +144,39 @@ class SmalHostTemplateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'feature change needs approval'):
                 function()
 
+    def test_existing_nic_retry_has_a_no_write_mode(self):
+        self.assertFalse(self.template['parameters']['reuseExistingNic']['defaultValue'])
+        nic = next(r for r in self.resources if r['type'] == 'Microsoft.Network/networkInterfaces')
+        self.assertIn('reuseExistingNic', nic['condition'])
+        self.assertIn('not(', nic['condition'])
+
+    def test_retry_preview_only_allows_vm_create(self):
+        helper = runpy.run_path(str(ROOT / 'scripts/retry-smal-host.py'), run_name='retry_runner_test')
+        good = {'status': 'succeeded', 'result': {'status': 'Succeeded', 'changes': [
+            {'changeType': 'Create', 'resourceId': helper['VM_ID']},
+            {'changeType': 'NoChange', 'resourceId': helper['NIC_ID']},
+        ]}}
+        self.assertTrue(helper['preview_is_vm_create_only'](good))
+        good['result']['changes'][1]['changeType'] = 'Modify'
+        self.assertFalse(helper['preview_is_vm_create_only'](good))
+
+    def test_retry_rejects_changed_or_attached_nic(self):
+        helper = runpy.run_path(str(ROOT / 'scripts/retry-smal-host.py'), run_name='retry_runner_test')
+        snapshot = {
+            'identity': {'id': helper['SUB'], 'tenantId': helper['BASE']['TENANT']},
+            'principal': {'id': helper['BASE']['PRINCIPAL']},
+            'feature': {'state': 'Registered'}, 'disks': [],
+            'resources': [{'id': helper['NIC_ID']}],
+            'nic': {'id': helper['NIC_ID'], 'state': 'Succeeded', 'vm': None, 'forwarding': False,
+                    'ips': [{'ip': '10.200.16.4', 'subnet': helper['SUBNET_ID'], 'publicIp': None}]},
+        }
+        self.assertTrue(helper['state_is_reconciled'](snapshot))
+        snapshot['nic']['vm'] = helper['VM_ID']
+        self.assertFalse(helper['state_is_reconciled'](snapshot))
+        snapshot['nic']['vm'] = None
+        snapshot['nic']['ips'][0]['publicIp'] = 'unexpected-public-ip'
+        self.assertFalse(helper['state_is_reconciled'](snapshot))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -20,5 +20,9 @@
   "costCentreTagRequired": false,
   "reviewDateTagRequired": false,
   "metadataDisposition": "omit-unspecified-lab-cost-centre-and-review-date-tags-do-not-invent-values",
-  "hostOnlyScope": "private-outer-VM-NIC-and-disks-with-bootstrap-disabled-and-existing-egress-deny-unchanged"
+  "hostOnlyScope": "private-outer-VM-NIC-and-disks-with-bootstrap-disabled-and-no-shared-network-writes",
+  "standardSecurityFeatureRegistrationApproved": true,
+  "standardSecurityFeatureInstruction": "Yes, you may register Microsoft.Compute/UseStandardSecurityType",
+  "standardSecurityFeatureReceipt": "standard-security-feature-registration.json",
+  "hostRetryScope": "continue-previously-requested-host-deployment-after-feature-registration-reusing-existing-NIC-and-retained-credential"
 }

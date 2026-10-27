@@ -1,7 +1,7 @@
 # Shared SMAL LocalBox deployment preparation
 
 Date: 2026-10-27. Relay: **REL-287**, intended implementer AzureLocalBox.
-Status: **outer-host apply attempted; VM rejected by subscription feature gate**.
+Status: **approved feature registered; reconciled outer-host retry validated and previewed**.
 Quintin directly instructed this chat to action the task. This is not a self-dispatched run.
 
 **Latest result:** [outer-host deployment attempt](host-deployment.md). The private NIC
@@ -9,6 +9,11 @@ was created at `10.200.16.4`, but the VM was rejected because
 `Microsoft.Compute/UseStandardSecurityType` is `NotRegistered`. No VM or disks exist,
 no VM compute started and no feature registration/retry was performed. Earlier preflight
 and approval sections below are historical, not a claim that Azure remained unchanged.
+
+**Subsequent approval:** [reconciled retry preparation](host-retry.md). The owner-approved
+feature registration now reads Registered. Revised preview creates only the VM and
+references the existing NIC without writing it. The original failure is preserved;
+actual retry success must be established by the separate receipt/readback.
 
 ### Outer-host deployment instruction
 
