@@ -4,6 +4,10 @@ Date: 2026-10-27. Relay: **REL-287**, intended implementer AzureLocalBox.
 Status: **private outer host deployed and running; Azure Local bootstrap not deployed**.
 Quintin directly instructed this chat to action the task. This is not a self-dispatched run.
 
+**Asynchronous follow-up:** [control and progress](bootstrap-async-control.md). Native
+ten-minute cron is installed/active for bounded offline continuation and progress
+checks. Initial background preflight completed blocked. No cluster bootstrap job started.
+
 **Guest progress at 12:36 SAST:** [private PowerShell and bootstrap preflight](private-powershell.md).
 Key-only administrative PowerShell through private Bastion is verified. Hyper-V and
 management tools are Installed. The approved reboot completed, Hyper-V management

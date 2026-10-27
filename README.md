@@ -18,6 +18,9 @@ The [next bootstrap phase](docs/deployment-2026-10-27/bootstrap-next-plan.md) ex
 C: into the existing 1 TiB OS disk and identified unsafe vendor-module helpers that
 must be replaced. The approved current 2610 ISO is downloaded and publisher-checksum
 verified, but remains unmounted and unexecuted. No nested platform has been deployed.
+[Asynchronous continuation and progress](docs/deployment-2026-10-27/bootstrap-async-control.md)
+are configured with a ten-minute follow-up cron. The initial readiness check is blocked
+on the remaining safe implementation and design/apply decisions, not a running cluster job.
 `infra/bicep/main.smal-host.bicep` is the separately approved **private outer-host phase**,
 not an approved Azure Local platform/bootstrap deployment. Host costs and the existing
 signed-in deployment identity are approved. Bootstrap, version-specific egress,

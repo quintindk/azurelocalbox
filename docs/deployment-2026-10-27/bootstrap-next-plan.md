@@ -2,6 +2,10 @@
 
 Date: 2026-10-27. This is a proposed plan, not platform deployment approval.
 
+**Asynchronous continuation:** [progress, checkpoints and ten-minute follow-up](bootstrap-async-control.md).
+The own-agent cron is active. The initial background readiness check is blocked on
+the remaining implementation/design decisions, not running a cluster deployment.
+
 ## Progress made
 
 The host reboot, Hyper-V management and pinned-key private Bastion access are verified.
