@@ -49,7 +49,7 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, resume_verified=False, inspect_access=False):
+def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, resume_verified=False, inspect_access=False, repair_service_filter=False):
     if inspect_retry or inspect_access:
         inspect = True
     if inspect and retry_reconciled:
@@ -61,6 +61,10 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
         target = OUT / 'private-ssh-setup-resume1.json'
     if inspect_access:
         target = OUT / 'private-ssh-inspection3.json'
+    if repair_service_filter:
+        if inspect or retry_reconciled or resume_verified:
+            raise RuntimeError('Firewall repair is a separate operation')
+        target = OUT / 'private-ssh-firewall-repair.json'
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -106,8 +110,14 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
                 or evidence.get('service') != 'Stopped' or evidence.get('markerStatus') != 'pending'
                 or evidence.get('firewall', {}).get('remoteAddress') != ['10.202.0.0/255.255.255.192']):
             raise RuntimeError('Pending setup is not exactly reconciled for service-only resume')
-    public = '' if inspect else local_key()
+    if repair_service_filter:
+        evidence = json.loads((OUT / 'private-ssh-inspection3.json').read_text()).get('result', {})
+        if evidence.get('service') != 'Running' or evidence.get('firewallService') != ['sshd'] or evidence.get('markerStatus') != 'complete':
+            raise RuntimeError('Owned rule has not been reconciled for a service-filter repair')
+    public = '' if inspect or repair_service_filter else local_key()
     source = (ROOT / 'scripts/inspect-smal-ssh-config.ps1').read_text() if inspect else SCRIPT.read_text()
+    if repair_service_filter:
+        source = (ROOT / 'scripts/repair-smal-ssh-firewall.ps1').read_text()
     record = {'beganAtSast': H['now'](), 'status': 'pending', 'commit': commit,
               'scriptSha256': hashlib.sha256(source.encode()).hexdigest(),
               'publicKeySha256': hashlib.sha256(public.encode()).hexdigest(),
@@ -117,7 +127,7 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
     command = ['az', 'vm', 'run-command', 'invoke', '--subscription', H['SUB'], '-g', H['RG'], '-n', H['VM'],
                '--command-id', 'RunPowerShellScript', '--scripts', source,
                '--query', 'value[].{code:code,message:message}', '-o', 'json', '--only-show-errors']
-    if not inspect:
+    if not inspect and not repair_service_filter:
         command.extend(['--parameters', 'AdminUser=' + admin, 'PublicKey=' + public])
         if resume_verified:
             command.append('Operation=ResumeVerified')
@@ -143,9 +153,14 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
             if inspect:
                 allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly', 'firewall', 'markerStatus', 'defaultSshAllowRuleEnabled'}
                 allowed |= {'servicePath', 'listeners', 'firewallProgram', 'firewallService', 'firewallProfiles', 'profileDefaults', 'recentSshEvents'}
+            if repair_service_filter:
+                allowed = {'computer', 'atUtc', 'serviceSidNone', 'serviceFilterBefore', 'serviceFilterAfter', 'remoteAddress', 'localPort', 'program', 'defaultSshAllowRuleEnabled', 'configSha256'}
             if set(payload) - allowed or payload.get('computer', '').lower() != H['VM'].lower():
                 raise RuntimeError('Unexpected SSH setup evidence')
-            if inspect:
+            if repair_service_filter:
+                if payload.get('serviceSidNone') is not True or payload.get('serviceFilterAfter') != 'Any' or payload.get('defaultSshAllowRuleEnabled') != 'False':
+                    raise RuntimeError('Service-filter repair not verified')
+            elif inspect:
                 if payload.get('readOnly') is not True:
                     raise RuntimeError('Unexpected inspection evidence')
             else:
@@ -153,7 +168,7 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, res
                     raise RuntimeError('SSH setup not verified')
                 pin_host_key(payload['hostPublicKey'])
             record['result'] = payload
-            record['status'] = 'complete-read-only-inspection' if inspect else 'complete-host-key-pinned-login-not-yet-tested'
+            record['status'] = 'complete-service-filter-repaired-login-not-yet-tested' if repair_service_filter else ('complete-read-only-inspection' if inspect else 'complete-host-key-pinned-login-not-yet-tested')
     except subprocess.TimeoutExpired:
         record['status'] = 'uncertain-timeout-do-not-repeat'
     except (RuntimeError, ValueError, KeyError) as error:
@@ -173,5 +188,6 @@ if __name__ == '__main__':
     parser.add_argument('--inspect-retry', action='store_true')
     parser.add_argument('--resume-verified', action='store_true')
     parser.add_argument('--inspect-access', action='store_true')
+    parser.add_argument('--repair-service-filter', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry, args.resume_verified, args.inspect_access))
+    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry, args.resume_verified, args.inspect_access, args.repair_service_filter))
