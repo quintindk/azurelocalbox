@@ -1,5 +1,21 @@
 # azure-localbox
 
+## Current deployment: shared SMAL landing zone, 2026-10-27
+
+The earlier LocalBox deployment was removed. Use the existing shared
+`rg-smal-network-san-1/vnet-smal-san-1/snet-localbox-host` (`10.200.16.0/24`).
+Do not reuse the archived spoke/registration IDs below or run the historical
+`azd provision` / teardown examples. Legacy preprovision now fails before mutations.
+
+Current work and approval gates: [deployment preparation](docs/deployment-2026-10-27/README.md).
+`infra/bicep/main.smal-host.bicep` is the separately approved **private outer-host phase**,
+not an approved Azure Local platform/bootstrap deployment. Host costs and the existing
+signed-in deployment identity are approved. Bootstrap, version-specific egress,
+nested ranges/routing and platform governance effects remain gated. The template
+does not deploy shared networking, bootstrap extensions, RBAC or SMAL workloads.
+
+The remainder records the **historical** deployment design, not current live state.
+
 An [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
 project that deploys Jumpstart **LocalBox** (nested 2-node Azure Local + Azure Arc
 + AKS Arc) into an **enterprise-vended, firewall-governed Virtual WAN spoke** in
