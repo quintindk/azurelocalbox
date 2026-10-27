@@ -3,6 +3,50 @@
 Date: 2026-10-27. Relay: REL-287.
 Scope: continue the owner-requested private outer-host deployment, not LocalBox bootstrap.
 
+## Actual outcome
+
+**The private outer host is deployed and running. Compute charges are active.**
+
+- Retry source committed/pushed before apply: `2259628651a19f0e58e64a9c3d5bcd813fb32573`
+  on `deploy/smal-host-20261027`. No merge to main.
+- `smal-host-20261027-retry1` succeeded at **11:21:57 SAST**. Original failed deployment
+  remains in history, rather than being relabelled successful.
+- Independent readback at **11:25:46 SAST**: VM Running, provisioning Succeeded,
+  guest agent Ready (`2.7.41491.1216`), Windows Server 2025 Datacenter
+  `10.0.26100.33674`, Standard security, `Standard_E32s_v6` in SAN.
+- Existing NIC retained at **`10.200.16.4`**, now attached to the VM. No public IP,
+  same supplied host subnet, NIC forwarding remains false. The attachment is the
+  intended VM-side effect, not a rewrite of NIC addressing/subnet/default properties.
+- **Nine Premium_LRS disks attached**, 1,024 GiB OS + eight 256 GiB data disks,
+  **3,072 GiB total**. Exact IDs/tier/state are in the final readback file.
+- New system-assigned principal `9ed2a366-1912-4c45-b189-b60ae1b6e4ff` has no observed
+  role assignments. No extensions observed at this check. No bootstrap was deployed.
+- Active effective default route is the user route to VirtualAppliance `10.200.0.132`.
+  A separate BGP default entry is Invalid/inactive; it is not the selected path.
+
+Private administration transport was tested from the actual deployment host:
+existing VPN route and resolver reachable; current Azure identity opened a private
+Premium Bastion native tunnel to this VM; listener was loopback-only; the target
+returned a valid 19-byte RDP negotiation response. The temporary local tunnel was
+closed after the probe. **Guest credentials/login and TLS certificate trust were not
+tested**, and no authenticated guest command ran. This is transport/protocol evidence,
+not an authenticated desktop session or platform readiness proof.
+
+Evidence: `host-retry1-apply-receipt.json`, `host-retry1-final-readback.json`,
+`host-bastion-transport.json`. The initial readback's `diskSizeGb` projection returned
+null and its local total calculation failed. The corrected `diskSizeGB` inventory is
+retained separately and explicitly verifies all nine sizes and attachments.
+
+**Not deployed by this phase:** Azure Local registration/cluster, resource bridge,
+custom location, AKS Arc, platform extensions or SMAL workloads/models. The current
+registered platform query returns empty. Do not equate the running VM or network
+owner's configuration receipt with a passed IG-01/platform acceptance.
+
+No restart, stop or deallocation followed inspection. No automatic stop schedule was
+installed. Owner-approved compute/disk costs now apply; this host has no running
+application/model experiment. Safe bootstrap/version/identity/telemetry and nested
+network acceptance remain the next platform work, not permission to replay legacy scripts.
+
 ## Approved capability and preserved state
 
 Quintin directly approved `Microsoft.Compute/UseStandardSecurityType` registration.
@@ -65,6 +109,6 @@ preview acceptance, changed/attached/public-IP NIC rejection, required feature s
 secure parameter redaction and distinct host/platform gates. Old accepted October
 evidence and unrelated work are preserved. No credential value is part of the evidence.
 
-This document records retry preparation. The apply receipt and independent resource/
-power-state readback must establish the actual deployment outcome, not the successful
-preview or the Entlz completion message.
+The sections above preserve retry preparation and its subsequent actual outcome.
+The successful receipt and independent resource/power-state readback, not the preview
+or Entlz message, establish that the outer host is now running.
