@@ -6,9 +6,11 @@ Never put secrets in a script, argument or output. The private key stays local.
 import argparse
 import base64
 import json
+import os
 from pathlib import Path
 import re
 import runpy
+import signal
 import socket
 import stat
 import subprocess
@@ -22,7 +24,7 @@ VM_ID = f"/subscriptions/{BASE['SUB']}/resourceGroups/{BASE['RG']}/providers/Mic
 
 
 def ssh_args(port, admin, encoded):
-    return ['ssh', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
+    return ['ssh', '-n', '-v', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
             '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes',
             '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
             '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(H['KNOWN']),
@@ -78,7 +80,9 @@ def main(script, name):
     command = ['az', 'network', 'bastion', 'tunnel', '--subscription', '702382d0-3722-4630-8983-5580b92f0c1a',
                '-g', 'rg-bastion-san-1', '-n', 'bas-test-san-1', '--target-resource-id', VM_ID,
                '--resource-port', '22', '--port', str(port), '--timeout', '300', '--only-show-errors']
-    tunnel = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    # Do not capture tunnel pipes: Azure CLI descendants can keep them open after
+    # the parent exits. Isolate the process group and bound every cleanup wait.
+    tunnel = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         deadline = time.monotonic() + 70
         while time.monotonic() < deadline and tunnel.poll() is None:
@@ -91,8 +95,9 @@ def main(script, name):
             time.sleep(1)
         else:
             raise RuntimeError('Private Bastion tunnel not ready')
-        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded), capture_output=True, text=True, timeout=180)
+        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
         record['sshExitCode'] = result.returncode
+        record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
         if result.returncode:
             labels = ['Host key verification failed', 'Permission denied', 'Connection timed out', 'Connection reset', 'Connection closed']
             record['errorLabel'] = next((label for label in labels if label in result.stderr), 'command-failed-raw-output-suppressed')
@@ -102,19 +107,24 @@ def main(script, name):
                 raise RuntimeError('Unexpected sensitive-pattern output suppressed')
             record['result'] = json.loads(result.stdout)
             record['status'] = 'complete'
-    except subprocess.TimeoutExpired:
+        target.write_text(json.dumps(record, indent=2) + '\n')
+    except subprocess.TimeoutExpired as error:
         record['status'] = 'uncertain-command-timeout-do-not-repeat'
+        diagnostic = error.stderr or b''
+        if isinstance(diagnostic, bytes):
+            diagnostic = diagnostic.decode(errors='replace')
+        record['sshDiagnostics'] = {label: label in diagnostic for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
     except (RuntimeError, ValueError) as error:
         record['status'] = 'failed-inspect-before-retry'
         record['errorType'] = type(error).__name__
     finally:
         if tunnel.poll() is None:
-            tunnel.terminate()
+            os.killpg(tunnel.pid, signal.SIGTERM)
         try:
-            tunnel.communicate(timeout=10)
+            tunnel.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            tunnel.kill()
-            tunnel.communicate()
+            os.killpg(tunnel.pid, signal.SIGKILL)
+            tunnel.wait(timeout=5)
         # Tunnel diagnostics can contain signed URLs. Never export raw output.
         record['tunnelProcessClosed'] = True
         record['localSocketAbsent'] = not subprocess.run(['ss', '-H', '-ltn', 'sport', '=', ':' + str(port)], capture_output=True, text=True, check=True).stdout.strip()
