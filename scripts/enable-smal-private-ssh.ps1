@@ -64,11 +64,15 @@ if (Test-Path $marker) {
 if ((Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0').State.ToString() -ne 'Installed') { throw 'OpenSSH component absent. Installation requires a separately reviewed path.' }
 if (-not (Test-Path $config) -or (Test-Path $keys) -or (Test-Path $backup) -or (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue)) { throw 'Unexpected existing SSH setup. Preserve it and inspect.' }
 $original = Get-Content $config -Raw
+$expectedExistingHash = 'FB46B8F386771448755C9D220B49FC3AE6EF1447CCCBB568B0BFE766DA1E54FE'
+if ((Get-FileHash $config -Algorithm SHA256).Hash -ne $expectedExistingHash) { throw 'SSH configuration changed after read-only reconciliation' }
 $active = @($original -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
 $stock = @('AuthorizedKeysFile .ssh/authorized_keys', 'Subsystem sftp sftp-server.exe', 'Match Group administrators', 'AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys')
 foreach ($line in $active) {
     $normalised = ($line -replace '\s+', ' ').Trim()
-    if ($stock -notcontains $normalised) { throw 'Active non-default SSH configuration found. No changes applied.' }
+    # The independently hashed image configuration also has an AllowGroups gate.
+    # Preserve it verbatim. The exact hash above prevents accepting arbitrary edits.
+    if ($stock -notcontains $normalised -and $normalised -notmatch '^AllowGroups ') { throw 'Active non-default SSH configuration found. No changes applied.' }
 }
 $otherPort22Rules = @(Get-NetFirewallRule -Enabled True -Direction Inbound -Action Allow | Where-Object Name -ne 'OpenSSH-Server-In-TCP' | Where-Object { @($_ | Get-NetFirewallPortFilter | Select-Object -ExpandProperty LocalPort) -contains '22' })
 if ($otherPort22Rules.Count) { throw 'Unowned explicit TCP22 allow rule exists. Inspect without modifying it.' }

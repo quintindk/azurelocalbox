@@ -49,8 +49,10 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit, inspect=False):
-    target = OUT / ('private-ssh-inspection1.json' if inspect else 'private-ssh-setup.json')
+def main(commit, inspect=False, retry_reconciled=False):
+    if inspect and retry_reconciled:
+        raise RuntimeError('Inspection and reconciled apply are separate operations')
+    target = OUT / ('private-ssh-inspection1.json' if inspect else ('private-ssh-setup-retry1.json' if retry_reconciled else 'private-ssh-setup.json'))
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -74,6 +76,15 @@ def main(commit, inspect=False):
         prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
         if prior.get('guestErrorLabel') != 'Active non-default SSH configuration found':
             raise RuntimeError('Inspection is only for the known rejected initial setup')
+    if retry_reconciled:
+        prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
+        inspection = json.loads((OUT / 'private-ssh-inspection1.json').read_text())
+        evidence = inspection.get('result', {})
+        if (prior.get('guestErrorLabel') != 'Active non-default SSH configuration found'
+                or inspection.get('status') != 'complete-read-only-inspection'
+                or evidence.get('configSha256') != 'FB46B8F386771448755C9D220B49FC3AE6EF1447CCCBB568B0BFE766DA1E54FE'
+                or any(evidence.get(k) is not False for k in ['setupMarkerExists', 'backupExists', 'adminKeysExist'])):
+            raise RuntimeError('Original no-change failure is not reconciled for a retry')
     public = '' if inspect else local_key()
     source = (ROOT / 'scripts/inspect-smal-ssh-config.ps1').read_text() if inspect else SCRIPT.read_text()
     record = {'beganAtSast': H['now'](), 'status': 'pending', 'commit': commit,
@@ -134,5 +145,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--inspect', action='store_true')
+    parser.add_argument('--retry-reconciled', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit, args.inspect))
+    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled))

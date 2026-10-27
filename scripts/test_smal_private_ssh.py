@@ -27,6 +27,7 @@ class PrivateSshTests(unittest.TestCase):
 
     def test_existing_work_and_incomplete_operations_preserved(self):
         self.assertIn('Active non-default SSH configuration found', SETUP)
+        self.assertIn('SSH configuration changed after read-only reconciliation', SETUP)
         self.assertIn('Copy-Item $config $backup', SETUP)
         self.assertIn('Prior SSH setup differs or is incomplete', SETUP)
         self.assertIn('Service remains stopped', SETUP)

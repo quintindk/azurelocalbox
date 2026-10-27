@@ -52,7 +52,10 @@ def main(script, name):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
-    setup = json.loads((OUT / 'private-ssh-setup.json').read_text())
+    setup_path = OUT / 'private-ssh-setup-retry1.json'
+    if not setup_path.exists():
+        setup_path = OUT / 'private-ssh-setup.json'
+    setup = json.loads(setup_path.read_text())
     if setup.get('status') != 'complete-host-key-pinned-login-not-yet-tested':
         raise RuntimeError('Successful setup evidence missing')
     if not H['KNOWN'].is_file() or H['KNOWN'].is_symlink() or stat.S_IMODE(H['KEY'].stat().st_mode) != 0o600:
