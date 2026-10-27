@@ -61,6 +61,10 @@ def verify_identity_and_empty_group():
     principal = az_read(['ad', 'signed-in-user', 'show', '--query', '{id:id}'])
     if identity['id'] != SUB or identity['tenantId'] != TENANT or principal['id'] != PRINCIPAL:
         raise RuntimeError('Current identity differs from approved scope')
+    feature = az_read(['feature', 'show', '--subscription', SUB, '--namespace', 'Microsoft.Compute',
+                       '--name', 'UseStandardSecurityType', '--query', '{state:properties.state}'])
+    if feature['state'] != 'Registered':
+        raise RuntimeError('UseStandardSecurityType is not Registered; subscription feature change needs approval')
     resources = az_read(['resource', 'list', '--subscription', SUB, '-g', RG,
                          '--query', '[].{id:id,type:type}'])
     if resources:

@@ -21,6 +21,7 @@ HOST_ONLY_GATES = [
     'hostCostApproval',
     'hostOnlyDeploymentApproval',
     'namedScopedDeploymentPrincipalAndSubnetJoin',
+    'standardSecurityCapability',
     'finalPolicyAdmissionValidationAndWhatIf',
     'reviewedCommitAndPushBeforeApply',
 ]

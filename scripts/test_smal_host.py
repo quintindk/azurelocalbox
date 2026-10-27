@@ -4,6 +4,7 @@ from pathlib import Path
 import runpy
 import subprocess
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -130,6 +131,18 @@ class SmalHostTemplateTests(unittest.TestCase):
         scrubbed = helper['sanitise'](value, dummy)
         self.assertNotIn(dummy, json.dumps(scrubbed))
         self.assertEqual(scrubbed['adminPassword'], '[redacted-secure-input]')
+
+    def test_feature_must_be_registered_before_prepare_or_apply(self):
+        helper = runpy.run_path(str(ROOT / 'scripts/deploy-smal-host.py'), run_name='host_runner_test')
+        function = helper['verify_identity_and_empty_group']
+        results = [
+            {'id': helper['SUB'], 'tenantId': helper['TENANT']},
+            {'id': helper['PRINCIPAL']},
+            {'state': 'NotRegistered'},
+        ]
+        with patch.dict(function.__globals__, {'az_read': unittest.mock.Mock(side_effect=results)}):
+            with self.assertRaisesRegex(RuntimeError, 'feature change needs approval'):
+                function()
 
 
 if __name__ == '__main__':

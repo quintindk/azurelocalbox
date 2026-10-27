@@ -8,6 +8,7 @@ Do not reuse the archived spoke/registration IDs below or run the historical
 `azd provision` / teardown examples. Legacy preprovision now fails before mutations.
 
 Current work and approval gates: [deployment preparation](docs/deployment-2026-10-27/README.md).
+Latest apply outcome: [host deployment attempt](docs/deployment-2026-10-27/host-deployment.md).
 `infra/bicep/main.smal-host.bicep` is the separately approved **private outer-host phase**,
 not an approved Azure Local platform/bootstrap deployment. Host costs and the existing
 signed-in deployment identity are approved. Bootstrap, version-specific egress,

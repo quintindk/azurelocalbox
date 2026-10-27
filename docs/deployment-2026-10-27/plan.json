@@ -1,7 +1,7 @@
 {
   "taskId": "task_smal_localbox_landing_zone_20261027",
   "reference": "REL-287",
-  "status": "host-only-validated-preview-reviewed-awaiting-commit-push",
+  "status": "host-deployment-attempted-vm-rejected-standard-security-feature-not-registered",
   "tenantId": "c6e67968-af25-4557-ab8b-06b693048d3b",
   "subscriptionId": "8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea",
   "resourceGroup": "rg-localbox-nodes-san-1",
@@ -21,7 +21,8 @@
     "dataDiskGiBEach": 256,
     "totalDiskGiB": 3072,
     "publicIp": false,
-    "privateIp": null,
+    "privateIp": "10.200.16.4",
+    "privateIpAssignedTo": "unattached-LocalBox-Client-NIC-only-no-VM",
     "subnetId": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-smal-network-san-1/providers/Microsoft.Network/virtualNetworks/vnet-smal-san-1/subnets/snet-localbox-host",
     "bootstrap": false,
     "roleAssignments": [],
@@ -69,6 +70,7 @@
   },
   "gates": {
     "hostOnlyDeploymentApproval": "approved",
+    "standardSecurityCapability": "NotRegistered-subscription-feature-change-not-authorised",
     "labMetadataDisposition": "omit-cost-centre-and-review-date-tags-per-owner-lab-instruction",
     "currentAzureAndHostNetworkReadback": "passed-point-in-time",
     "skuQuotaAndImmutableWindowsImageAvailability": "passed-point-in-time-not-capacity-reservation",
@@ -80,12 +82,22 @@
     "versionMatchedSourceScopedEgressAndGovernanceAcceptance": "pending",
     "nestedPrefixRoutingDnsAndReturnPathAgreement": "pending",
     "finalPolicyAdmissionValidationAndWhatIf": "passed",
-    "reviewedCommitAndPushBeforeApply": "not-done",
+    "reviewedCommitAndPushBeforeApply": "passed",
     "bastionGuestSession": "not-testable-no-vm",
     "guestClusterStorageAndApiReadiness": "not-deployed",
     "finalLocalBoxReadinessAcceptance": "not-passed"
   },
-  "resourcesCreatedUpdatedDeleted": [],
+  "resourcesCreatedUpdatedDeleted": [
+    {
+      "operation": "created",
+      "resourceId": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-nodes-san-1/providers/Microsoft.Network/networkInterfaces/LocalBox-Client-NIC",
+      "state": "Succeeded-unattached"
+    }
+  ],
+  "failedResourceOperation": "LocalBox-Client VM creation rejected: Microsoft.Compute/UseStandardSecurityType is NotRegistered",
+  "appliedSourceCommit": "74168e5f98da08466be870134617040ae378c64c",
+  "applyReceipt": "host-apply-receipt.json",
+  "reconciliation": "host-failure-reconciliation.json",
   "localboxVmComputeStarted": false,
   "networkRequest": "network-request.json",
   "egressBaseline": "egress-review-baseline.json",
