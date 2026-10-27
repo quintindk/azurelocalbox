@@ -45,6 +45,12 @@ def main(script, name):
     if not path.is_relative_to(ROOT / 'scripts') or path.suffix != '.ps1':
         raise RuntimeError('Only reviewed scripts under repository scripts/ are accepted')
     relative = str(path.relative_to(ROOT))
+    if relative == 'scripts/stage-smal-2610-image.ps1':
+        approval = json.loads((OUT / 'current-2610-image-approval.json').read_text())
+        if (approval.get('downloadAndChecksumVerificationApproved') is not True
+                or approval.get('licenceAndPrivacyAcceptanceForDownload') is not True
+                or approval.get('solutionVersionSelected') != '12.2610.1004.41'):
+            raise RuntimeError('Exact image/terms approval missing')
     source = path.read_bytes()
     committed = subprocess.check_output(['git', 'show', 'HEAD:' + relative], cwd=ROOT)
     if committed != source:
@@ -76,13 +82,14 @@ def main(script, name):
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
-    guest_timeout = 600 if relative == 'scripts/prepare-smal-host-hyperv.ps1' else 90
+    guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
+                     'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')
     command = ['az', 'network', 'bastion', 'tunnel', '--subscription', '702382d0-3722-4630-8983-5580b92f0c1a',
                '-g', 'rg-bastion-san-1', '-n', 'bas-test-san-1', '--target-resource-id', VM_ID,
-               '--resource-port', '22', '--port', str(port), '--timeout', '900', '--only-show-errors']
+               '--resource-port', '22', '--port', str(port), '--timeout', str(max(900, guest_timeout + 120)), '--only-show-errors']
     # Do not capture tunnel pipes: Azure CLI descendants can keep them open after
     # the parent exits. Isolate the process group and bound every cleanup wait.
     tunnel = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)

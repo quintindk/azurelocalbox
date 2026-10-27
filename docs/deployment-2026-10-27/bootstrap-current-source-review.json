@@ -57,9 +57,14 @@
     "solutionVersion": "12.2610.1004.41",
     "osBuild": "26100.33650",
     "reference": "https://learn.microsoft.com/en-us/azure/azure-local/release-information-23h2?view=azloc-2610",
-    "approved": false,
-    "isoUrlResolved": false,
-    "isoSha256Pinned": false
+    "approvedForImageStagingOnly": true,
+    "approval": "current-2610-image-approval.json",
+    "isoUrlResolved": true,
+    "isoSha256Pinned": true,
+    "composedImageVersion": "12.2610.0.3098",
+    "composedImageFilenameOsBuild": "26100.32230",
+    "imageCatalogueEvidence": "current-os-image-catalogue-hci.json",
+    "catalogueAndRecipeBuildDistinction": "The published recipe targets solution 12.2610.1004.41. Its composed ISO filename contains base build 26100.32230, not the release OS build 26100.33650. Preserve the service mapping rather than infer incompatibility from the filename."
   },
   "oldImageCandidate": {
     "label": "AzLocal2604",
@@ -92,12 +97,13 @@
     "guestOsLicensingSeparate": true,
     "platformChargesNotCoveredByHostOnlyCostApproval": true,
     "mandatoryBillingAndDiagnosticExportAcceptance": "pending",
-    "noTermsAcceptedOrRegistrationPerformed": true
+    "licencePrivacyAcceptedForDownloadOnly": true,
+    "platformRegistrationPerformed": false
   },
   "nestedNetwork": {
     "reviewRequestsDelivered": true,
     "reviewResponseReceived": false,
     "prefixesReservedOrApplied": false
   },
-  "nextApplyBoundary": "existing C: volume expansion only; no image/module download/import, guest VM creation, data formatting, nested networking, registration, new grant or shared-network change"
+  "nextApplyBoundary": "owner-approved pinned ISO download and checksum verification only; no mounting/execution, module import, guest VM creation, data formatting, nested networking, registration, new grant or shared-network change"
 }

@@ -30,6 +30,30 @@ class NextStageTests(unittest.TestCase):
         self.assertTrue(audit['noSecurityWaiverInferred'])
         self.assertEqual(len(audit['findings']), 6)
 
+    def test_image_staging_parses_and_never_executes(self):
+        path = ROOT / 'scripts/stage-smal-2610-image.ps1'
+        code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"
+        subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True)
+        source = path.read_text()
+        for forbidden in ['Mount-DiskImage', 'Mount-VHD', 'Start-VM', 'New-VM', 'Invoke-Expression',
+                          'Start-Process', 'Install-Module', 'Format-Volume', 'Remove-Item',
+                          'ServerCertificateValidationCallback', 'SkipCertificateCheck']:
+            self.assertNotIn(forbidden, source)
+        self.assertIn('$request.AllowAutoRedirect = $false', source)
+        self.assertIn('[IO.FileMode]::CreateNew', source)
+        self.assertIn('Previous image operation is incomplete', source)
+
+    def test_iso_pin_matches_catalogue_not_filename_guess(self):
+        out = ROOT / 'docs/deployment-2026-10-27'
+        pin = json.loads((out / 'current-os-image-2610-pin.json').read_text())
+        catalogue = json.loads((out / 'current-os-image-catalogue-hci.json').read_text())
+        image, = [x for x in catalogue['images'] if x['validatedSolutionRecipeVersion'] == pin['solutionVersion']]
+        self.assertEqual(image['composedImageIsoHash'], pin['publisherSha256'])
+        self.assertEqual(image['publicDownloadUrl'], pin['url'])
+        source = (ROOT / 'scripts/stage-smal-2610-image.ps1').read_text()
+        for value in [pin['publisherSha256'], pin['url'], str(pin['contentLength']), pin['etag']]:
+            self.assertIn(value, source)
+
 
 if __name__ == '__main__':
     unittest.main()

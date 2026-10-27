@@ -1,7 +1,7 @@
 {
   "taskId": "task_smal_localbox_landing_zone_20261027",
   "reference": "REL-287",
-  "status": "host-rebooted-hyperv-management-operational-private-powershell-verified-platform-not-deployed",
+  "status": "host-ready-os-volume-expanded-safe-bootstrap-replacement-and-current-image-review-in-progress",
   "tenantId": "c6e67968-af25-4557-ab8b-06b693048d3b",
   "subscriptionId": "8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea",
   "resourceGroup": "rg-localbox-nodes-san-1",
@@ -34,6 +34,12 @@
     "approved": false,
     "resourceGroupName": null,
     "platformVersion": null,
+    "selectedSolutionVersionForImageStagingOnly": "12.2610.1004.41",
+    "selectedImageApproval": "current-2610-image-approval.json",
+    "releaseTargetOsBuild": "26100.33650",
+    "composedImageVersion": "12.2610.0.3098",
+    "composedImageBaseOsBuild": "26100.32230",
+    "currentIsoPin": "current-os-image-2610-pin.json",
     "bootstrapArtifactPin": null,
     "arcAgentVersion": null,
     "bridgeVersion": null,
@@ -149,10 +155,22 @@
     "restartActionReceipt": "host-hyperv-restart-action.json",
     "postRebootGuestReceipt": "private-ssh-post-reboot-hyperv-check.json",
     "postRebootArmReceipt": "host-hyperv-post-reboot-arm.json",
+    "osVolumeExpansion": {
+      "beforePartitionGiB": 126.89,
+      "afterPartitionGiB": 1023.89,
+      "freeGiBAtObservation": 991.75,
+      "existingBootDiskGiB": 1024,
+      "newAzureDiskAllocation": false,
+      "dataDiskInventoryUnchanged": true,
+      "receipt": "private-ssh-os-volume-expansion.json"
+    },
     "egressChecks": "bootstrap-preflight-network.json",
     "egressLimitations": "individual-DNS-HEAD-TLS-NTP-only-not-WebSocket-image-pull-or-nested-readiness;GitHub-release-hosts-failed"
   },
   "networkRequest": "network-request.json",
+  "nextBootstrapPlan": "bootstrap-next-plan.md",
+  "moduleExecutionReview": "module-execution-review.json",
+  "currentOfficialSourceReview": "bootstrap-current-source-review.json",
   "egressBaseline": "egress-review-baseline.json",
   "report": "README.md"
 }
