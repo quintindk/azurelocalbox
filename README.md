@@ -16,7 +16,8 @@ key-only PowerShell over private Bastion and installed Hyper-V. The approved reb
 completed, and Hyper-V management and private PowerShell were reverified afterwards.
 The [next bootstrap phase](docs/deployment-2026-10-27/bootstrap-next-plan.md) expanded
 C: into the existing 1 TiB OS disk and identified unsafe vendor-module helpers that
-must be replaced. No nested platform has been deployed.
+must be replaced. The approved current 2610 ISO is downloaded and publisher-checksum
+verified, but remains unmounted and unexecuted. No nested platform has been deployed.
 `infra/bicep/main.smal-host.bicep` is the separately approved **private outer-host phase**,
 not an approved Azure Local platform/bootstrap deployment. Host costs and the existing
 signed-in deployment identity are approved. Bootstrap, version-specific egress,

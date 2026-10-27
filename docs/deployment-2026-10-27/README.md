@@ -10,10 +10,12 @@ management tools are Installed. The approved reboot completed, Hyper-V managemen
 queries succeed, VMMS is Running and the pending-reboot flag is clear.
 No nested networking, disk formatting, Azure Local registration/cluster or AKS applied.
 
-**Next-phase progress at 13:17 SAST:** [safe bootstrap implementation plan](bootstrap-next-plan.md).
+**Next-phase progress at 13:37 SAST:** [safe bootstrap implementation plan](bootstrap-next-plan.md).
 C: now uses the already-provisioned 1 TiB OS disk, with data disks unchanged. The pinned
 vendor module contains further unsafe guest-side operations and will not be executed
-unchanged. Current 2610 image/version, terms, identity and nested-design decisions remain open.
+unchanged. The owner selected 2610 and accepted its licence/privacy terms for image
+staging only. The current ISO is downloaded and publisher-SHA256 verified, not mounted
+or executed. Replacement code, remaining dependencies, identity and nested-design work remain.
 
 **Current outcome:** [successful reconciled host retry](host-retry.md). VM Running at
 `10.200.16.4`, no public IP, guest agent Ready, nine attached disks/3,072 GiB. Private

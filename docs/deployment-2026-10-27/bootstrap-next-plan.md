@@ -7,7 +7,8 @@ Date: 2026-10-27. This is a proposed plan, not platform deployment approval.
 The host reboot, Hyper-V management and pinned-key private Bastion access are verified.
 The next host preparation operation expanded **only C:** from **126.89 GiB** to
 **1,023.89 GiB**, using the existing approved 1,024 GiB boot disk. Free space is now
-**991.75 GiB** at the observation. No new Azure disk allocation or reboot occurred.
+**991.75 GiB** immediately after expansion, before ISO staging. No new Azure disk
+allocation or reboot occurred.
 The eight data-disk sizes and partition styles were unchanged. Defender remains active.
 
 Source `783f637142e47429a779c1cf471090a1be67efba` was committed and pushed before
@@ -15,6 +16,17 @@ the expansion. The script refuses an unexpected boot disk, unhealthy/non-NTFS vo
 non-contiguous expansion, existing incomplete operation or any data-disk inventory
 change. It does not delete recovery partitions or initialise/format any disk.
 See `private-ssh-os-volume-expansion.json`.
+
+The owner-selected current **2610 ISO is now staged and publisher-checksum verified**.
+The operation completed at **13:37:31 SAST**, transferring **7,491,864,576 bytes**.
+It remains unmounted and unexecuted at:
+
+`C:\ProgramData\AzureLocalBox\Artifacts\2610\AzureLocal24H2.26100.32230.LCM.12.2610.0.3098.x64.en-us.iso`
+
+Source `200670ba2acdac26107627e76cf42644be0a4e59` was committed and pushed before
+execution. Exact length, ETag and publisher SHA-256 matched. The data-disk inventory
+was unchanged, and the temporary private Bastion tunnel and local socket were closed.
+See `private-ssh-stage-2610-image.json` and `checks-2610-image-staging.json`.
 
 ## Why the vendor bootstrap cannot simply resume
 
@@ -111,8 +123,9 @@ The committed staging script downloads the exact pinned ISO through normal TLS,
 requires the reviewed ETag and byte length, verifies the publisher checksum before
 renaming its partial file, protects the artifact directory with Administrator/SYSTEM
 ACLs, and preserves failed/incomplete state rather than redownloading blindly.
-It does not mount, install, boot or register anything. Its execution receipt must
-establish the actual download outcome.
+It does not mount, install, boot or register anything. The successful execution
+receipt establishes the completed download and full-file checksum verification,
+not an installed OS, offline build inspection or successful service deployment.
 
 ## Network and apply boundaries
 
@@ -125,5 +138,8 @@ advertising un-NATed nested sources through the legacy shared catch-all.
 No data disk formatting/pool creation, nested VM/switch/NAT creation, new secret,
 registration identity/grant, Azure Local registration, resource bridge, custom location,
 AKS, workload or model run was performed. No shared-network change occurred.
-The next platform apply still needs the exact image/dependency pins, reviewed storage
-and nested-network plan, scoped identity, terms/cost and mandatory-export acceptance.
+The current image pin and full download verification are complete. The next platform
+apply still needs the remaining dependency pins and safe replacement code, reviewed
+storage and nested-network plan, scoped identity, deployment terms/cost and
+mandatory-export acceptance. No further generic "continue" instruction is needed
+for that engineering preparation. Material apply decisions remain explicit.
