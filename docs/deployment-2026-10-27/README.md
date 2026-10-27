@@ -4,9 +4,14 @@ Date: 2026-10-27. Relay: **REL-287**, intended implementer AzureLocalBox.
 Status: **private outer host deployed and running; Azure Local bootstrap not deployed**.
 Quintin directly instructed this chat to action the task. This is not a self-dispatched run.
 
+**Guest progress at 12:20 SAST:** [private PowerShell and bootstrap preflight](private-powershell.md).
+Key-only administrative PowerShell through private Bastion is verified. Hyper-V and
+management tools are Installed, with a host reboot still required and not performed.
+No nested networking, disk formatting, Azure Local registration/cluster or AKS applied.
+
 **Current outcome:** [successful reconciled host retry](host-retry.md). VM Running at
 `10.200.16.4`, no public IP, guest agent Ready, nine attached disks/3,072 GiB. Private
-Bastion-to-target RDP protocol transport verified; guest login remains untested.
+Bastion-to-target RDP protocol transport verified; RDP login remains untested.
 Compute charges are active. No Azure Local cluster/bridge/AKS or workload was deployed
 by this host phase. The historical failure and preparation below remain evidence,
 not the current VM state.

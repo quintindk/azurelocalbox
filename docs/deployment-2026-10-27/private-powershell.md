@@ -2,6 +2,12 @@
 
 Date: 2026-10-27. Host: `LocalBox-Client`, `10.200.16.4`.
 
+**Current prerequisite state:** Hyper-V and its PowerShell tools installed at
+**12:19:44 SAST**, restart required. No reboot occurred. The host remains Running,
+and administrative SSH/PowerShell was independently reverified at **12:20:48 SAST**.
+Defender real-time protection remains enabled. No disks were formatted, no nested
+network was configured and no Azure Local platform resources were deployed.
+
 ## Verified administration path
 
 **Authenticated administrative PowerShell execution works through private Bastion.**
@@ -82,18 +88,22 @@ correlation was performed, so request failure is not labelled a proven firewall 
 No WebSocket, nested egress, registry pull or complete platform readiness is claimed.
 Findings and the draft nested-range/SNAT review request were sent to Entlz.
 
-## Next bounded bootstrap stage
+## Completed bounded bootstrap stage
 
 The request to continue local bootstrap permits the initial local virtualisation
-prerequisite. The committed `prepare-smal-host-hyperv.ps1` installs only the Windows
+prerequisite. The committed `prepare-smal-host-hyperv.ps1` installed only the Windows
 Hyper-V role and management tools, with `-Restart:$false`, using the verified SSH
-transport. It checks the exact host, existing elevated account, virtualisation flags
-and Defender state. Its own durable marker blocks an uninspected repeat.
+transport. It checked the exact host, existing elevated account, virtualisation flags
+and Defender state. Its own durable marker blocks an uninspected repeat. Source
+`075e04a0b67933385ec92b4e21ba4eb7c11e073e` was committed and pushed before execution.
+`private-ssh-hyperv-prerequisite.json` reports both features Installed and
+`restartNeeded=Yes`, with the original boot timestamp unchanged. Hypervisor operation
+after reboot has not been tested.
 
 This is not approval for nested network ranges, storage-pool creation/formatting,
 legacy bootstrap scripts, floating downloads/modules, registration identities,
 telemetry choices, Azure Local registration or AKS. No automatic reboot is authorised
-by the access setup. The install receipt must establish the actual prerequisite result.
+by the access setup. A controlled host reboot is the next explicit decision.
 
 ## Usage
 
@@ -112,4 +122,7 @@ It is a transport, not permission to run arbitrary deployments or expose secrets
 
 Evidence: `bootstrap-preflight-system.json`, `bootstrap-preflight-network.json`,
 `private-ssh-setup-resume1.json`, `private-ssh-firewall-repair.json` and
-`private-ssh-login-verification3.json`. Original host-success evidence is unchanged.
+`private-ssh-login-verification3.json`, `private-ssh-hyperv-prerequisite.json` and
+`private-ssh-post-hyperv-login-verification.json`. Original VM apply/readback receipts
+are unchanged. The earlier host-success manifest is a historical snapshot at commit
+`63aa147`, not a checksum claim for subsequently updated progress documents.
