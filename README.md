@@ -12,7 +12,8 @@ Latest apply outcome: [successful private host retry](docs/deployment-2026-10-27
 The outer host is running at `10.200.16.4`; compute charges are active. Azure Local
 bootstrap/registration, resource bridge and AKS are not deployed by this phase.
 Subsequent [guest preparation](docs/deployment-2026-10-27/private-powershell.md) verified
-key-only PowerShell over private Bastion and installed Hyper-V. A host reboot is pending.
+key-only PowerShell over private Bastion and installed Hyper-V. The approved reboot
+completed, and Hyper-V management and private PowerShell were reverified afterwards.
 `infra/bicep/main.smal-host.bicep` is the separately approved **private outer-host phase**,
 not an approved Azure Local platform/bootstrap deployment. Host costs and the existing
 signed-in deployment identity are approved. Bootstrap, version-specific egress,

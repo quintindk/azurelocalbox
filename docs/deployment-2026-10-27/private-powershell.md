@@ -3,8 +3,10 @@
 Date: 2026-10-27. Host: `LocalBox-Client`, `10.200.16.4`.
 
 **Current prerequisite state:** Hyper-V and its PowerShell tools installed at
-**12:19:44 SAST**, restart required. No reboot occurred. The host remains Running,
-and administrative SSH/PowerShell was independently reverified at **12:20:48 SAST**.
+**12:19:44 SAST**, then rebooted with explicit owner approval. The new guest boot time
+is **12:34:09 SAST**. Private administrator SSH/PowerShell and Hyper-V management
+were reverified after reboot, with the inspection completed at **12:36:11 SAST**.
+The host remains Running and the pending-reboot flag is clear.
 Defender real-time protection remains enabled. No disks were formatted, no nested
 network was configured and no Azure Local platform resources were deployed.
 
@@ -97,13 +99,44 @@ transport. It checked the exact host, existing elevated account, virtualisation 
 and Defender state. Its own durable marker blocks an uninspected repeat. Source
 `075e04a0b67933385ec92b4e21ba4eb7c11e073e` was committed and pushed before execution.
 `private-ssh-hyperv-prerequisite.json` reports both features Installed and
-`restartNeeded=Yes`, with the original boot timestamp unchanged. Hypervisor operation
-after reboot has not been tested.
+`restartNeeded=Yes`, with the original boot timestamp unchanged at that observation.
 
 This is not approval for nested network ranges, storage-pool creation/formatting,
 legacy bootstrap scripts, floating downloads/modules, registration identities,
-telemetry choices, Azure Local registration or AKS. No automatic reboot is authorised
-by the access setup. A controlled host reboot is the next explicit decision.
+telemetry choices, Azure Local registration or AKS. The access setup itself did not
+authorise a reboot. The subsequent explicit approval and outcome are recorded below.
+
+## Approved reboot and post-reboot verification
+
+Quintin answered **"yes, do that"** to the explicit host reboot and verification
+question. `host-hyperv-reboot-approval.json` records that bounded authority.
+
+- Source `ec3c81d7fcb6ddaff86ac8b425c5e3a664e6233f` was committed and pushed before
+  the one scoped `az vm restart` action. It returned exit 0 at **12:34:12 SAST**.
+  No force flag, stop/deallocation or automatic retry was used.
+- Guest boot time changed from `2026-10-27T09:21:23.6797000Z` to
+  `2026-10-27T10:34:09.5000000Z`. This establishes the reboot, not only the API response.
+- The first pre-reboot read-only inspection failed because VMMS was not yet registered
+  while the role installation awaited reboot. The corrected read-only inspection
+  confirmed that state before any restart. Both observations are preserved.
+- After reboot, the same pinned SSH host key was accepted. The existing administrator
+  successfully executed read-only PowerShell through private Bastion, source
+  `10.202.0.5` to `10.200.16.4:22`. Tunnel and local listener were closed afterwards.
+- Hyper-V and its PowerShell tools are Installed. VMMS and sshd are Running.
+  `Get-VMHost` succeeds, reporting **32 logical processors and 256 GiB RAM**. The
+  Hyper-V management WMI service is present, with reported HealthState `5`.
+- Pending reboot is false, Defender real-time protection is true, the eight data
+  disks remain RAW and DNS remains `10.204.0.4`. There are **zero nested VMs, virtual
+  switches and NetNat entries**. No nested VM boot test or platform deployment ran.
+- Independent Azure readback at **12:36 SAST** confirms VM Running/agent Ready,
+  `10.200.16.4`, no public IP, NIC forwarding disabled and all nine disks attached,
+  totalling 3,072 GiB. Compute charges remain active.
+
+Receipts: `host-hyperv-restart-action.json`, `private-ssh-pre-reboot-hyperv-check2.json`,
+`private-ssh-post-reboot-hyperv-check.json`, `host-hyperv-post-reboot-arm.json` and
+`checks-host-reboot.json`. This passes the host-role/reboot/access checks, not Azure
+Local cluster readiness. Safe pinned platform dependencies and the reviewed nested
+network/identity/telemetry design remain outstanding.
 
 ## Usage
 

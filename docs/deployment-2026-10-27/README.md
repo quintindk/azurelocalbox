@@ -4,9 +4,10 @@ Date: 2026-10-27. Relay: **REL-287**, intended implementer AzureLocalBox.
 Status: **private outer host deployed and running; Azure Local bootstrap not deployed**.
 Quintin directly instructed this chat to action the task. This is not a self-dispatched run.
 
-**Guest progress at 12:20 SAST:** [private PowerShell and bootstrap preflight](private-powershell.md).
+**Guest progress at 12:36 SAST:** [private PowerShell and bootstrap preflight](private-powershell.md).
 Key-only administrative PowerShell through private Bastion is verified. Hyper-V and
-management tools are Installed, with a host reboot still required and not performed.
+management tools are Installed. The approved reboot completed, Hyper-V management
+queries succeed, VMMS is Running and the pending-reboot flag is clear.
 No nested networking, disk formatting, Azure Local registration/cluster or AKS applied.
 
 **Current outcome:** [successful reconciled host retry](host-retry.md). VM Running at
