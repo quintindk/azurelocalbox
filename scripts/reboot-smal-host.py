@@ -1,6 +1,7 @@
 """One explicitly approved VM restart. Never repeat a pending/uncertain action."""
 import argparse
 import json
+import re
 from pathlib import Path
 import runpy
 import subprocess
@@ -14,6 +15,7 @@ def preconditions(inspection, installed):
     result = inspection.get('result', {})
     return (inspection.get('status') == 'complete'
             and result.get('computer') == H['VM']
+            and result.get('inspectionSucceeded') is True
             and result.get('administrator') is True
             and result.get('hyperV') == 'Installed'
             and result.get('hyperVPowerShell') == 'Installed'
@@ -21,7 +23,7 @@ def preconditions(inspection, installed):
             and inspection.get('strictPinnedHostKey') is True)
 
 
-def main(commit):
+def main(commit, inspection_name='private-ssh-pre-reboot-hyperv-check.json'):
     target = OUT / 'host-hyperv-restart-action.json'
     if target.exists():
         raise RuntimeError('Restart already recorded. Reconcile instead of repeating.')
@@ -36,7 +38,11 @@ def main(commit):
     if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip():
         raise RuntimeError('Tracked files changed after commit')
     installed = json.loads((OUT / 'private-ssh-hyperv-prerequisite.json').read_text())
-    inspection = json.loads((OUT / 'private-ssh-pre-reboot-hyperv-check.json').read_text())
+    if not re.fullmatch(r'private-ssh-pre-reboot-hyperv-check[0-9]*\.json', inspection_name):
+        raise RuntimeError('Only a fixed pre-reboot inspection receipt is accepted')
+    inspection = json.loads((OUT / inspection_name).read_text())
+    if inspection.get('commit') != commit or inspection.get('script') != 'scripts/inspect-smal-hyperv.ps1':
+        raise RuntimeError('Guest inspection must use this exact committed source')
     if not preconditions(inspection, installed):
         raise RuntimeError('Fresh private guest inspection differs from the approved pre-reboot state')
     identity = H['read_az'](['account', 'show', '--subscription', H['SUB'], '--query', '{id:id,tenantId:tenantId}'])
@@ -49,6 +55,7 @@ def main(commit):
     command = ['az', 'vm', 'restart', '--subscription', H['SUB'], '-g', H['RG'], '-n', H['VM'], '--only-show-errors']
     record = {'beganAtSast': H['now'](), 'status': 'pending', 'commit': commit,
               'command': command, 'beforeLastBootUtc': inspection['result']['lastBootUtc'],
+              'preRebootInspection': inspection_name,
               'approval': 'host-hyperv-reboot-approval.json', 'automaticRetryPermitted': False}
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')
@@ -67,5 +74,6 @@ def main(commit):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--inspection', default='private-ssh-pre-reboot-hyperv-check.json')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit))
+    raise SystemExit(main(args.commit, args.inspection))

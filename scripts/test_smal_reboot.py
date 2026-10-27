@@ -16,7 +16,7 @@ class RebootTests(unittest.TestCase):
     def test_expected_preconditions(self):
         installed = {'result': {'lastBootUtc': 'before'}}
         inspection = {'status': 'complete', 'strictPinnedHostKey': True, 'result': {
-            'computer': 'LocalBox-Client', 'administrator': True, 'hyperV': 'Installed',
+            'computer': 'LocalBox-Client', 'inspectionSucceeded': True, 'administrator': True, 'hyperV': 'Installed',
             'hyperVPowerShell': 'Installed', 'lastBootUtc': 'before'}}
         self.assertTrue(H['preconditions'](inspection, installed))
         inspection['result']['lastBootUtc'] = 'changed'
