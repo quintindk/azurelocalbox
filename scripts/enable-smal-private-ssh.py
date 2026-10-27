@@ -49,12 +49,16 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False):
+def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False, resume_verified=False):
     if inspect_retry:
         inspect = True
     if inspect and retry_reconciled:
         raise RuntimeError('Inspection and reconciled apply are separate operations')
     target = OUT / (('private-ssh-inspection2.json' if inspect_retry else 'private-ssh-inspection1.json') if inspect else ('private-ssh-setup-retry1.json' if retry_reconciled else 'private-ssh-setup.json'))
+    if resume_verified:
+        if inspect or retry_reconciled:
+            raise RuntimeError('Resume is a separate operation')
+        target = OUT / 'private-ssh-setup-resume1.json'
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -87,6 +91,14 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False):
                 or evidence.get('configSha256') != 'FB46B8F386771448755C9D220B49FC3AE6EF1447CCCBB568B0BFE766DA1E54FE'
                 or any(evidence.get(k) is not False for k in ['setupMarkerExists', 'backupExists', 'adminKeysExist'])):
             raise RuntimeError('Original no-change failure is not reconciled for a retry')
+    if resume_verified:
+        inspection = json.loads((OUT / 'private-ssh-inspection2.json').read_text())
+        evidence = inspection.get('result', {})
+        if (inspection.get('status') != 'complete-read-only-inspection'
+                or evidence.get('configSha256') != '52ADEA08D10405087D4DC9091710C399328AE598C594B4CB70245B03D8FA44B4'
+                or evidence.get('service') != 'Stopped' or evidence.get('markerStatus') != 'pending'
+                or evidence.get('firewall', {}).get('remoteAddress') != ['10.202.0.0/255.255.255.192']):
+            raise RuntimeError('Pending setup is not exactly reconciled for service-only resume')
     public = '' if inspect else local_key()
     source = (ROOT / 'scripts/inspect-smal-ssh-config.ps1').read_text() if inspect else SCRIPT.read_text()
     record = {'beganAtSast': H['now'](), 'status': 'pending', 'commit': commit,
@@ -100,6 +112,8 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False):
                '--query', 'value[].{code:code,message:message}', '-o', 'json', '--only-show-errors']
     if not inspect:
         command.extend(['--parameters', 'AdminUser=' + admin, 'PublicKey=' + public])
+        if resume_verified:
+            command.append('Operation=ResumeVerified')
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         record['exitCode'] = result.returncode
@@ -118,7 +132,7 @@ def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False):
                 raise RuntimeError('Guest reported stderr')
             payload = json.loads('\n'.join(row['message'] for row in rows if '/StdOut/' in row.get('code', '')))
             allowed = {'computer', 'service', 'adminUser', 'passwordAuthentication', 'publicKeyAuthentication',
-                       'forwarding', 'remoteAddress', 'defaultShell', 'hostPublicKey', 'configSha256', 'rebootPerformed', 'bootstrapApplied'}
+                       'forwarding', 'remoteAddress', 'remoteAddressObserved', 'defaultShell', 'hostPublicKey', 'configSha256', 'rebootPerformed', 'bootstrapApplied'}
             if inspect:
                 allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly', 'firewall', 'markerStatus', 'defaultSshAllowRuleEnabled'}
             if set(payload) - allowed or payload.get('computer', '').lower() != H['VM'].lower():
@@ -149,5 +163,6 @@ if __name__ == '__main__':
     parser.add_argument('--inspect', action='store_true')
     parser.add_argument('--retry-reconciled', action='store_true')
     parser.add_argument('--inspect-retry', action='store_true')
+    parser.add_argument('--resume-verified', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry))
+    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry, args.resume_verified))

@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^[a-zA-Z][a-zA-Z0-9_-]{0,31}$')][string]$AdminUser,
-    [Parameter(Mandatory)][ValidatePattern('^ssh-ed25519 [A-Za-z0-9+/]+={0,3}( [a-zA-Z0-9@._-]+)?$')][string]$PublicKey
+    [Parameter(Mandatory)][ValidatePattern('^ssh-ed25519 [A-Za-z0-9+/]+={0,3}( [a-zA-Z0-9@._-]+)?$')][string]$PublicKey,
+    [ValidateSet('Initial', 'ResumeVerified')][string]$Operation = 'Initial'
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -26,7 +27,8 @@ function Get-AccessEvidence {
     if ($effective -notcontains "allowusers $admin") { throw 'SSH user scope differs' }
     $rule = Get-NetFirewallRule -Name $ruleName
     $remote = @($rule | Get-NetFirewallAddressFilter | Select-Object -ExpandProperty RemoteAddress)
-    if ($rule.Enabled.ToString() -ne 'True' -or $rule.Action.ToString() -ne 'Allow' -or $remote.Count -ne 1 -or $remote[0] -ne '10.202.0.0/26') { throw 'Guest firewall scope differs' }
+    # Windows returns a dotted subnet mask even when configured with CIDR.
+    if ($rule.Enabled.ToString() -ne 'True' -or $rule.Action.ToString() -ne 'Allow' -or $remote.Count -ne 1 -or $remote[0] -notin @('10.202.0.0/26', '10.202.0.0/255.255.255.192')) { throw 'Guest firewall scope differs' }
     $publicHostKey = (Get-Content (Join-Path $dir 'ssh_host_ed25519_key.pub') -Raw).Trim()
     if ($publicHostKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/]+=*( .*)?$') { throw 'Invalid host PUBLIC key' }
     [ordered]@{
@@ -36,7 +38,8 @@ function Get-AccessEvidence {
         passwordAuthentication = $false
         publicKeyAuthentication = $true
         forwarding = $false
-        remoteAddress = $remote[0]
+        remoteAddress = '10.202.0.0/26'
+        remoteAddressObserved = $remote[0]
         defaultShell = (Get-ItemProperty 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell).DefaultShell
         hostPublicKey = $publicHostKey
         configSha256 = (Get-FileHash $config -Algorithm SHA256).Hash
@@ -54,10 +57,31 @@ if ($members -notcontains $user.SID.Value) { throw 'Expected existing local admi
 
 if (Test-Path $marker) {
     $previous = Get-Content $marker -Raw | ConvertFrom-Json
+    if ($Operation -eq 'ResumeVerified') {
+        # Resume ONLY the inspected, fully configured but fail-closed service.
+        # Do not rewrite config, keys, ACLs or firewall, and never remove a marker.
+        if ($previous.status -ne 'pending' -or $previous.keyHash -ne $keyHash -or $previous.adminUser -ne $admin) { throw 'Pending operation identity differs' }
+        if ((Get-FileHash $config -Algorithm SHA256).Hash -ne '52ADEA08D10405087D4DC9091710C399328AE598C594B4CB70245B03D8FA44B4') { throw 'Pending SSH configuration changed' }
+        if ((Get-FileHash $backup -Algorithm SHA256).Hash -ne 'FB46B8F386771448755C9D220B49FC3AE6EF1447CCCBB568B0BFE766DA1E54FE') { throw 'Original SSH backup changed' }
+        $expectedKeyLine = 'from="10.202.0.0/26",no-agent-forwarding,no-port-forwarding ' + $PublicKey
+        if ((Get-Content $keys -Raw).Trim() -ne $expectedKeyLine) { throw 'Pending authorised public key differs' }
+        if ((Get-Service sshd).Status.ToString() -ne 'Stopped') { throw 'Expected fail-closed service differs' }
+        if ((Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP').Enabled.ToString() -ne 'False') { throw 'Original broad SSH rule is not disabled' }
+        $null = Get-AccessEvidence
+        try {
+            Start-Service sshd
+            $evidence = Get-AccessEvidence
+            if ($evidence.service -ne 'Running') { throw 'SSH service not Running' }
+            @{ status = 'complete'; adminUser = $admin; keyHash = $keyHash; atUtc = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json | Set-Content $marker -Encoding ASCII
+            $evidence | ConvertTo-Json -Depth 5 -Compress
+        } catch { Stop-Service sshd -ErrorAction SilentlyContinue; throw }
+        exit 0
+    }
     if ($previous.status -ne 'complete' -or $previous.keyHash -ne $keyHash -or $previous.adminUser -ne $admin) { throw 'Prior SSH setup differs or is incomplete. Inspect instead of retrying.' }
     Get-AccessEvidence | ConvertTo-Json -Depth 5 -Compress
     exit 0
 }
+if ($Operation -eq 'ResumeVerified') { throw 'Expected pending marker is absent' }
 
 # A fresh image already has OpenSSH installed/running. Do not modify a customised
 # service or an existing authorised-key file under the guise of initial setup.

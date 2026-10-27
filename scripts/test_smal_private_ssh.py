@@ -38,6 +38,13 @@ class PrivateSshTests(unittest.TestCase):
         self.assertIn("Get-Content (Join-Path $dir 'ssh_host_ed25519_key.pub')", SETUP)
         self.assertNotIn("Get-Content (Join-Path $dir 'ssh_host_ed25519_key')", SETUP)
 
+    def test_firewall_mask_and_recovery_are_exact(self):
+        self.assertIn("@('10.202.0.0/26', '10.202.0.0/255.255.255.192')", SETUP)
+        self.assertIn("$Operation -eq 'ResumeVerified'", SETUP)
+        self.assertIn('Expected fail-closed service differs', SETUP)
+        self.assertIn('Pending SSH configuration changed', SETUP)
+        self.assertNotIn('Remove-Item $marker', SETUP)
+
     def test_ssh_arguments_are_strict_and_do_not_use_passwords(self):
         args = TRANSPORT['ssh_args'](12345, 'labadmin', 'encoded-script')
         for value in ['StrictHostKeyChecking=yes', 'IdentitiesOnly=yes', 'IdentityAgent=none', 'BatchMode=yes',
