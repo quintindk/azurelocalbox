@@ -12,7 +12,7 @@ TRANSPORT = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run
 
 class PrivateSshTests(unittest.TestCase):
     def test_powershell_scripts_parse(self):
-        for file in ['enable-smal-private-ssh.ps1', 'verify-smal-private-powershell.ps1', 'inspect-smal-ssh-config.ps1', 'repair-smal-ssh-firewall.ps1']:
+        for file in ['enable-smal-private-ssh.ps1', 'verify-smal-private-powershell.ps1', 'inspect-smal-ssh-config.ps1', 'repair-smal-ssh-firewall.ps1', 'prepare-smal-host-hyperv.ps1']:
             code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / file) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True)
 
@@ -66,6 +66,14 @@ class PrivateSshTests(unittest.TestCase):
                     function('ssh-ed25519 AAAACHANGED comment')
             finally:
                 scope['KNOWN'] = original
+
+    def test_hyperv_stage_is_minimal_and_never_reboots(self):
+        source = (ROOT / 'scripts/prepare-smal-host-hyperv.ps1').read_text()
+        self.assertIn('Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -Restart:$false', source)
+        self.assertIn('Prior Hyper-V operation exists. Inspect rather than repeat.', source)
+        for forbidden in ['Restart-Computer', 'New-VMSwitch', 'New-NetNat', 'Format-Volume',
+                          'Initialize-Disk', 'Install-Module', 'Add-MpPreference', 'Enable-WSManCredSSP']:
+            self.assertNotIn(forbidden, source)
 
 
 if __name__ == '__main__':

@@ -76,11 +76,13 @@ def main(script, name):
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
+    guest_timeout = 600 if relative == 'scripts/prepare-smal-host-hyperv.ps1' else 90
+    record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')
     command = ['az', 'network', 'bastion', 'tunnel', '--subscription', '702382d0-3722-4630-8983-5580b92f0c1a',
                '-g', 'rg-bastion-san-1', '-n', 'bas-test-san-1', '--target-resource-id', VM_ID,
-               '--resource-port', '22', '--port', str(port), '--timeout', '300', '--only-show-errors']
+               '--resource-port', '22', '--port', str(port), '--timeout', '900', '--only-show-errors']
     # Do not capture tunnel pipes: Azure CLI descendants can keep them open after
     # the parent exits. Isolate the process group and bound every cleanup wait.
     tunnel = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -96,7 +98,7 @@ def main(script, name):
             time.sleep(1)
         else:
             raise RuntimeError('Private Bastion tunnel not ready')
-        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
+        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=guest_timeout)
         record['sshExitCode'] = result.returncode
         record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
         if result.returncode:
