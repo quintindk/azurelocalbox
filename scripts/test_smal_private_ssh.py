@@ -12,7 +12,7 @@ TRANSPORT = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run
 
 class PrivateSshTests(unittest.TestCase):
     def test_powershell_scripts_parse(self):
-        for file in ['enable-smal-private-ssh.ps1', 'verify-smal-private-powershell.ps1']:
+        for file in ['enable-smal-private-ssh.ps1', 'verify-smal-private-powershell.ps1', 'inspect-smal-ssh-config.ps1']:
             code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / file) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True)
 

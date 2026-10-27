@@ -49,8 +49,8 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit):
-    target = OUT / 'private-ssh-setup.json'
+def main(commit, inspect=False):
+    target = OUT / ('private-ssh-inspection1.json' if inspect else 'private-ssh-setup.json')
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -70,8 +70,12 @@ def main(commit):
     admin = H['read_az'](['vm', 'show', '--subscription', H['SUB'], '-g', H['RG'], '-n', H['VM'], '--query', 'osProfile.adminUsername'])
     if not isinstance(admin, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,31}', admin):
         raise RuntimeError('Unexpected existing admin account')
-    public = local_key()
-    source = SCRIPT.read_text()
+    if inspect:
+        prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
+        if prior.get('guestErrorLabel') != 'Active non-default SSH configuration found':
+            raise RuntimeError('Inspection is only for the known rejected initial setup')
+    public = '' if inspect else local_key()
+    source = (ROOT / 'scripts/inspect-smal-ssh-config.ps1').read_text() if inspect else SCRIPT.read_text()
     record = {'beganAtSast': H['now'](), 'status': 'pending', 'commit': commit,
               'scriptSha256': hashlib.sha256(source.encode()).hexdigest(),
               'publicKeySha256': hashlib.sha256(public.encode()).hexdigest(),
@@ -80,8 +84,9 @@ def main(commit):
         stream.write(json.dumps(record, indent=2) + '\n')
     command = ['az', 'vm', 'run-command', 'invoke', '--subscription', H['SUB'], '-g', H['RG'], '-n', H['VM'],
                '--command-id', 'RunPowerShellScript', '--scripts', source,
-               '--parameters', 'AdminUser=' + admin, 'PublicKey=' + public,
                '--query', 'value[].{code:code,message:message}', '-o', 'json', '--only-show-errors']
+    if not inspect:
+        command.extend(['--parameters', 'AdminUser=' + admin, 'PublicKey=' + public])
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         record['exitCode'] = result.returncode
@@ -101,13 +106,19 @@ def main(commit):
             payload = json.loads('\n'.join(row['message'] for row in rows if '/StdOut/' in row.get('code', '')))
             allowed = {'computer', 'service', 'adminUser', 'passwordAuthentication', 'publicKeyAuthentication',
                        'forwarding', 'remoteAddress', 'defaultShell', 'hostPublicKey', 'configSha256', 'rebootPerformed', 'bootstrapApplied'}
+            if inspect:
+                allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly'}
             if set(payload) - allowed or payload.get('computer', '').lower() != H['VM'].lower():
                 raise RuntimeError('Unexpected SSH setup evidence')
-            if payload.get('passwordAuthentication') is not False or payload.get('publicKeyAuthentication') is not True or payload.get('service') != 'Running' or payload.get('remoteAddress') != '10.202.0.0/26':
-                raise RuntimeError('SSH setup not verified')
-            pin_host_key(payload['hostPublicKey'])
+            if inspect:
+                if payload.get('readOnly') is not True:
+                    raise RuntimeError('Unexpected inspection evidence')
+            else:
+                if payload.get('passwordAuthentication') is not False or payload.get('publicKeyAuthentication') is not True or payload.get('service') != 'Running' or payload.get('remoteAddress') != '10.202.0.0/26':
+                    raise RuntimeError('SSH setup not verified')
+                pin_host_key(payload['hostPublicKey'])
             record['result'] = payload
-            record['status'] = 'complete-host-key-pinned-login-not-yet-tested'
+            record['status'] = 'complete-read-only-inspection' if inspect else 'complete-host-key-pinned-login-not-yet-tested'
     except subprocess.TimeoutExpired:
         record['status'] = 'uncertain-timeout-do-not-repeat'
     except (RuntimeError, ValueError, KeyError) as error:
@@ -122,5 +133,6 @@ def main(commit):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--inspect', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit))
+    raise SystemExit(main(args.commit, args.inspect))
