@@ -49,10 +49,12 @@ def pin_host_key(public):
             stream.write(content)
 
 
-def main(commit, inspect=False, retry_reconciled=False):
+def main(commit, inspect=False, retry_reconciled=False, inspect_retry=False):
+    if inspect_retry:
+        inspect = True
     if inspect and retry_reconciled:
         raise RuntimeError('Inspection and reconciled apply are separate operations')
-    target = OUT / ('private-ssh-inspection1.json' if inspect else ('private-ssh-setup-retry1.json' if retry_reconciled else 'private-ssh-setup.json'))
+    target = OUT / (('private-ssh-inspection2.json' if inspect_retry else 'private-ssh-inspection1.json') if inspect else ('private-ssh-setup-retry1.json' if retry_reconciled else 'private-ssh-setup.json'))
     if target.exists():
         raise RuntimeError('SSH setup already recorded. Reconcile rather than repeat.')
     approval = json.loads((OUT / 'private-ssh-approval.json').read_text())
@@ -73,8 +75,8 @@ def main(commit, inspect=False, retry_reconciled=False):
     if not isinstance(admin, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,31}', admin):
         raise RuntimeError('Unexpected existing admin account')
     if inspect:
-        prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
-        if prior.get('guestErrorLabel') != 'Active non-default SSH configuration found':
+        prior = json.loads((OUT / ('private-ssh-setup-retry1.json' if inspect_retry else 'private-ssh-setup.json')).read_text())
+        if prior.get('guestErrorLabel') != ('Guest firewall scope differs' if inspect_retry else 'Active non-default SSH configuration found'):
             raise RuntimeError('Inspection is only for the known rejected initial setup')
     if retry_reconciled:
         prior = json.loads((OUT / 'private-ssh-setup.json').read_text())
@@ -118,7 +120,7 @@ def main(commit, inspect=False, retry_reconciled=False):
             allowed = {'computer', 'service', 'adminUser', 'passwordAuthentication', 'publicKeyAuthentication',
                        'forwarding', 'remoteAddress', 'defaultShell', 'hostPublicKey', 'configSha256', 'rebootPerformed', 'bootstrapApplied'}
             if inspect:
-                allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly'}
+                allowed = {'computer', 'atUtc', 'configSha256', 'activeConfiguration', 'setupMarkerExists', 'backupExists', 'adminKeysExist', 'service', 'readOnly', 'firewall', 'markerStatus', 'defaultSshAllowRuleEnabled'}
             if set(payload) - allowed or payload.get('computer', '').lower() != H['VM'].lower():
                 raise RuntimeError('Unexpected SSH setup evidence')
             if inspect:
@@ -146,5 +148,6 @@ if __name__ == '__main__':
     parser.add_argument('--commit', required=True)
     parser.add_argument('--inspect', action='store_true')
     parser.add_argument('--retry-reconciled', action='store_true')
+    parser.add_argument('--inspect-retry', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled))
+    raise SystemExit(main(args.commit, args.inspect, args.retry_reconciled, args.inspect_retry))

@@ -14,6 +14,9 @@ $rows = @(foreach ($line in (Get-Content $config)) {
         $normalised -match '^AllowUsers [a-zA-Z0-9_-]+$'
     @{ directive = $parts[0]; value = $(if ($safe) { $normalised } else { 'custom-value-redacted' }) }
 })
+$rule = Get-NetFirewallRule -Name 'LocalBox-SSH-From-Private-Bastion' -ErrorAction SilentlyContinue
+$firewall = if ($rule) { @{ enabled = $rule.Enabled.ToString(); action = $rule.Action.ToString(); remoteAddress = @($rule | Get-NetFirewallAddressFilter | Select-Object -ExpandProperty RemoteAddress); localPort = @($rule | Get-NetFirewallPortFilter | Select-Object -ExpandProperty LocalPort) } } else { $null }
+$markerStatus = if (Test-Path (Join-Path $dir 'localbox-private-ssh.json')) { (Get-Content (Join-Path $dir 'localbox-private-ssh.json') -Raw | ConvertFrom-Json).status } else { 'absent' }
 [ordered]@{
     computer = $env:COMPUTERNAME
     atUtc = (Get-Date).ToUniversalTime().ToString('o')
@@ -23,5 +26,8 @@ $rows = @(foreach ($line in (Get-Content $config)) {
     backupExists = Test-Path (Join-Path $dir 'sshd_config.before-localbox-private-ssh')
     adminKeysExist = Test-Path (Join-Path $dir 'administrators_authorized_keys')
     service = (Get-Service sshd).Status.ToString()
+    firewall = $firewall
+    markerStatus = $markerStatus
+    defaultSshAllowRuleEnabled = @((Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue) | Select-Object -ExpandProperty Enabled | ForEach-Object ToString)
     readOnly = $true
 } | ConvertTo-Json -Depth 5 -Compress
