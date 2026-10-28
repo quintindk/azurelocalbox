@@ -187,6 +187,15 @@
     "clusterDeploymentStarted": false,
     "activeGuestBootstrapJob": null,
     "offlineEngineeringContinuationScheduled": true,
+    "lastCompletedOfflineMilestone": {
+      "id": "execution-plan-validator",
+      "executionId": "occurrence_bbe0e9ccab4a3537fb6b2b84e624a5124526c9fced3145445452b83987ffca9f",
+      "report": "bootstrap-plan-validator.md",
+      "validationReceipt": "bootstrap-plan-validation.json",
+      "allRegressionTestsPassed": 60,
+      "draftPlanStillBlocked": true,
+      "automaticApplyPermitted": false
+    },
     "automaticUnreviewedApplyOrRetryPermitted": false
   },
   "moduleExecutionReview": "module-execution-review.json",

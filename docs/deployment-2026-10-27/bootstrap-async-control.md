@@ -70,6 +70,8 @@ source before any future application.
    nested-network/storage manifest. Reject missing approval evidence, overlapping
    prefixes, default-route changes and non-exact disk identities. Unit tests use
    fixtures, not host changes. A validated draft is not address reservation or approval.
+   **Completed by the first scheduled occurrence:** [validator report](bootstrap-plan-validator.md).
+   The actual draft remains blocked, with guest IDs/LUNs and apply receipts deliberately absent.
 2. **Safe PowerShell Direct helpers.** Prepare side-effect-free module import and
    explicit guest-credential/VM-ID interfaces. Keep guest firewalls enabled, avoid
    TrustedHosts/CredSSP and never reuse or log the outer administrator credential.
