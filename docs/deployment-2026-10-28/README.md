@@ -1,6 +1,21 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 12:01 SAST
+## Latest verified result, 12:08 SAST
+
+**Approved local guest bootstrap finished successfully at 12:07:07 SAST, task result
+`0`, independently observed at 12:08:47 SAST.** See `local-bootstrap-result.json`.
+All three guests are running, selected DNS/HTTPS/NTP/NAT checks passed, both nested
+Hyper-V services are operational, both node clocks match the host within 0.02
+seconds, and all three new-credential logins were verified after cleanup/rotation.
+No setup-file/log review flags remain. No manual clock override or cron restart.
+
+**This is local preparation, not Azure Local cluster deployment.** Arc registration,
+S2D, resource bridge, custom location and AKS remain undeployed. Guest update and
+Evaluation activation checks, versioned AD deployment prerequisites and the exact
+cloud plan/remaining approvals are still pending. Current compute charges continue.
+
+The following bullets retain the recovery chain rather than rewriting failed
+attempts as successful history.
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -131,11 +146,11 @@
   running and completing initial setup/PowerShell Direct readiness. Azure Local
   registration/deployment remains excluded, not silently queued.
 
-| Guest | VM ID | Memory | vCPU | State at 12:01 SAST |
+| Guest | VM ID | Memory | vCPU | State at 12:08 SAST |
 |---|---|---:|---:|---|
 | `LB-DC01` | `f94c71f1-6854-48b9-a9f1-8238c99366d0` | 4 GiB | 2 | Running, domain/DNS and selected transport checks passed |
 | `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Running, selected checks/cleanup/clock/new login passed |
-| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Running, setup/session pending |
+| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Running, selected checks/cleanup/clock/new login passed |
 
 Current receipts:
 
@@ -159,6 +174,7 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-node01-cleanup-failure-inspection-20261028.json`
 - `../deployment-2026-10-27/private-ssh-node01-cleanup-recovery-20261028.json`
 - `../deployment-2026-10-27/private-ssh-node-cleanup-recovery-progress-20261028-01.json`
+- `../deployment-2026-10-27/private-ssh-node-cleanup-recovery-progress-20261028-03.json`
 
 ## Verified starting state and recovery
 

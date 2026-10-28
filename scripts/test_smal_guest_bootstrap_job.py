@@ -126,6 +126,30 @@ class GuestBootstrapJobTests(unittest.TestCase):
         for forbidden in ['New-VM', 'Start-VM', 'New-VHD', 'Format-Volume', 'Initialize-Disk', 'Install-ADDSForest', 'Remove-Item', 'Set-Date']:
             self.assertNotIn(forbidden, source)
 
+    def test_completed_local_summary_matches_live_receipt_without_claiming_platform_readiness(self):
+        summary = json.loads((ROOT / 'docs/deployment-2026-10-28/local-bootstrap-result.json').read_text())
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-node-cleanup-recovery-progress-20261028-03.json').read_text())
+        result = receipt['result']; state = result['state']
+        self.assertEqual(receipt['status'], 'complete')
+        self.assertEqual(result['lastTaskResult'], 0)
+        self.assertEqual(summary['status'], state['status'])
+        self.assertEqual(summary['completedAtUtc'], state['atUtc'])
+        self.assertEqual(summary['independentlyObservedAtUtc'], result['atUtc'])
+        self.assertEqual(len(summary['guests']), 3)
+        for guest in summary['guests']:
+            name = guest['name']
+            self.assertTrue(state['newCredentialLoginVerified'][name])
+            self.assertTrue(state['connectivity'][name]['transportChecksPassed'])
+            self.assertTrue(state['natEvidence'][name]['observedSourceTranslation'])
+            self.assertFalse(state['cleanup'][name]['setupLogsNeedReview'])
+            self.assertFalse(state['cleanup'][name].get('answerFileCleanupNeedsReview', False))
+        for name in ['LB-NODE01', 'LB-NODE02']:
+            self.assertTrue(state['clockEvidence'][name]['selectedClockChecksPassed'])
+            self.assertTrue(state['guestConfiguration'][name]['nestedHyperv']['vmmsRunning'])
+        self.assertFalse(summary['platformReadinessVerified'])
+        self.assertFalse(summary['clusterBootstrapComplete'])
+        self.assertFalse(summary['azureRegistrationPerformed'])
+
 
 if __name__ == '__main__':
     unittest.main()

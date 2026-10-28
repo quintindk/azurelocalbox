@@ -25,6 +25,12 @@ class CloudPrerequisiteTests(unittest.TestCase):
         self.assertFalse(result['Microsoft.KeyVault']['registered'])
         self.assertFalse(result['Microsoft.Attestation']['registered'])
 
+    def test_namespace_display_case_does_not_invent_a_missing_provider(self):
+        rows = [{'namespace': 'microsoft.insights', 'registrationState': 'Registered'}]
+        result = {row['namespace']: row for row in HELPERS['summarise_providers'](rows)}
+        self.assertTrue(result['Microsoft.Insights']['registered'])
+        self.assertEqual(result['Microsoft.Insights']['registrationState'], 'Registered')
+
     def test_inspection_only_uses_exact_read_commands_and_at_scope_filter(self):
         calls = []
         def fake(arguments):

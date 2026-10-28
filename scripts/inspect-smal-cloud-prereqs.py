@@ -31,9 +31,11 @@ def verify_identity(account, principal):
 
 
 def summarise_providers(rows):
-    states = {row['namespace']: row['registrationState'] for row in rows if row['namespace'] in PROVIDERS}
-    return [{'namespace': name, 'registrationState': states.get(name, 'not-returned'),
-             'registered': states.get(name) == 'Registered'} for name in PROVIDERS]
+    # ARM namespaces are case-insensitive. The service returns microsoft.insights
+    # in lower case, unlike most of the other namespace display forms.
+    states = {row['namespace'].casefold(): row['registrationState'] for row in rows}
+    return [{'namespace': name, 'registrationState': states.get(name.casefold(), 'not-returned'),
+             'registered': states.get(name.casefold()) == 'Registered'} for name in PROVIDERS]
 
 
 def inspect():
