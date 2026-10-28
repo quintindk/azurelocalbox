@@ -1,5 +1,35 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Current apply stop: inherited vault policy
+
+**The approved cloud prerequisite deployment succeeded, but its independent
+configuration guard stopped further platform apply.** The new vault is public
+access **Disabled**, despite the approved template/preview requesting Enabled.
+Activity Log proves tenant-root `MCAPSGovDeployPolicies` /
+`KeyVault_PublicNetwork_Modify` replaced that field during the deployment.
+Microsoft's current deployment-vault guidance requires public access during RP
+secret configuration. See
+[`deployment-blocker-vault-policy.md`](deployment-blocker-vault-policy.md) and
+`platform-policy-conflict-reconciled.json`.
+
+Created/retained: `rg-localbox-platform-weu-1`, `kv-lbox-weu-4766ea`, private
+diagnostic/witness Standard LRS accounts, enabled vault AuditEvent export,
+90-day scoped audit lifecycle and diagnostic-account CanNotDelete lock. RBAC,
+purge protection and 90-day vault recovery were independently verified.
+No keys/secrets uploaded, role assignments created, Arc onboarding, S2D, bridge,
+custom location or workload started by this deployment.
+
+The original prerequisite receipt retains both Azure `Succeeded` and the wrapper's
+failed boundary check. **Do not recreate the services or re-enable public access.**
+No exemption/ignore tag, older-API evasion, unapproved perimeter or privilege
+activation was attempted. Product/governance compatibility must be resolved before
+the irreversible node registration step. Normal host/new-resource charges continue.
+
+Entlz has factual target readiness for the approved three private endpoints and
+existing-zone DNS path. Its optional public-host vault FQDN admission is explicitly
+held because host public-path necessity is unproven. That private network subtask
+does not resolve the public RP path or authorise a policy bypass.
+
 ## Continuing toward registration
 
 The reviewed owner decision is now concrete:

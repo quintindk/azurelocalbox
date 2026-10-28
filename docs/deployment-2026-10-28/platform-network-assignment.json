@@ -13,5 +13,13 @@
   "sharedSmalApplicationPublicAccessChangesAllowed": false,
   "taskCreationIsNotProofOfNetworkApplication": true,
   "mainTaskReopened": false,
-  "furtherDelegationAllowed": false
+  "furtherDelegationAllowed": false,
+  "readinessQuestionId": "question_2d8b39def61cc14d4c648872fe2d88c6aad452876ccc7ac2528ba842406a8402",
+  "targetReadinessAnswered": true,
+  "targetResourceAndPrivateLinkDiscoveryVerified": true,
+  "existingCentralVaultAndBlobZonesReportedPresentByEntlz": true,
+  "noNewSharedZoneOrLinkRequiredForCentralResolverPath": true,
+  "optionalPublicHostVaultFirewallAdditionHeld": true,
+  "inheritedVaultPnaModifyConflictReportedToEntlz": true,
+  "privateEndpointFactsAreNotRpPublicPathOrPlatformReadiness": true
 }
