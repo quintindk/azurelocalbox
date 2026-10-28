@@ -165,6 +165,7 @@ def main(script, name):
     record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
+                     'scripts/inspect-smal-guest-inputs.ps1': 300,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:

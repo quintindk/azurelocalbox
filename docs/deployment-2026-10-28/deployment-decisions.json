@@ -26,5 +26,18 @@
   "paidGuestLicencePurchased": false,
   "cloudRegistrationScopeAndCostsApprovedByTheseAnswers": false,
   "newRoleGrantsApprovedByTheseAnswers": false,
-  "cronRestartApproved": false
+  "cronRestartApproved": false,
+  "localGuestPlanAnswer": "Approve local guest plan",
+  "localGuestPlanApproved": true,
+  "localGuestPlanPath": "local-guest-apply-proposal.md",
+  "localGuestPlanSha256": "f9bf5f4c5ea5763ae9d9c5405354cd17be27227a07a871bd9dcea2109331a526",
+  "localAddressAllocationConfirmedByOwner": true,
+  "localGuestMediaInstallationAndRebootsApproved": true,
+  "domainCreationApproved": "ad.localbox.test",
+  "guestSecretAnswer": "Accept automated secret handling",
+  "hostBoundDpapiGuestSecretsApproved": true,
+  "temporaryGuestImageAnswerFileSecretApproved": true,
+  "answerFileCleanupAndBootstrapRotationRequiredBeforeRegistration": true,
+  "externalSecretEscrowConfigured": false,
+  "secureErasureOfOldGuestDiskBlocksClaimed": false
 }
