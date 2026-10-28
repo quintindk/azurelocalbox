@@ -209,7 +209,7 @@ def main(script, name):
             'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1']}
         source = render_guest_image_installer(source, exact_guest_bytes('scripts/smal-guest-image-worker.ps1'),
                                               exact_guest_bytes('docs/deployment-2026-10-28/local-guest-image-manifest.json'), helpers, head)
-    if relative == 'scripts/start-smal-guest-bootstrap-job.ps1':
+    if relative in ['scripts/start-smal-guest-bootstrap-job.ps1', 'scripts/recover-smal-guest-bootstrap-network.ps1']:
         def exact_bootstrap_bytes(name):
             data = (ROOT / name).read_bytes()
             if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
@@ -227,6 +227,15 @@ def main(script, name):
         if (dependency.get('status') != 'complete' or dependency.get('result', {}).get('sourceCommit') != pinned['imageSourceCommit']
                 or dependency.get('result', {}).get('workerSha256') != pinned['imageWorkerSha256']):
             raise RuntimeError('Exact image job launch not reconciled; do not queue boot')
+        if relative == 'scripts/recover-smal-guest-bootstrap-network.ps1':
+            observed = json.loads((OUT / 'private-ssh-guest-bootstrap-network-failure-inspection-20261028.json').read_text())
+            guest = observed.get('result', {}).get('guest', {})
+            if (observed.get('status') != 'complete' or guest.get('computer') != 'LB-DC01'
+                    or guest.get('domainRole') != 2 or guest.get('adServiceExists') is not False
+                    or guest.get('defaults') != [] or guest.get('profilesRejectedByOriginalGuard') != 0
+                    or guest.get('protection', {}).get('RealTimeProtectionEnabled') is not True
+                    or any(item['IPAddress'] != '127.0.0.1' and not item['IPAddress'].startswith('169.254.') for item in guest.get('ipv4', []))):
+                raise RuntimeError('Exact no-network-effects pre-directory recovery evidence missing')
         helpers = {name: exact_bootstrap_bytes('scripts/' + name) for name in [
             'smal-guest-secret-functions.ps1', 'smal-guest-direct-functions.ps1']}
         source = render_guest_bootstrap_installer(source, exact_bootstrap_bytes('scripts/smal-guest-bootstrap-worker.ps1'), manifest, helpers, head)

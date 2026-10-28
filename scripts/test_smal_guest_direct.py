@@ -31,6 +31,8 @@ class GuestDirectTests(unittest.TestCase):
         self.assertIn('RegisterThisConnectionsAddress $false', source)
         self.assertIn("-DefaultGateway '10.64.0.1'", source)
         self.assertIn("-ServerAddresses '10.64.0.10'", source)
+        self.assertIn('$wait.Elapsed.TotalSeconds -gt 180', source)
+        self.assertIn('if ($protected) { break }', source)
 
     def test_cleanup_deletes_only_attributed_files_and_preserves_password_policy(self):
         source = LIBRARY.read_text()

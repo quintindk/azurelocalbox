@@ -14,7 +14,7 @@ WORKER = (ROOT / 'scripts/smal-guest-bootstrap-worker.ps1').read_text()
 
 class GuestBootstrapJobTests(unittest.TestCase):
     def test_scripts_parse(self):
-        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1']:
+        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1', 'recover-smal-guest-bootstrap-network.ps1']:
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
 
@@ -74,6 +74,31 @@ class GuestBootstrapJobTests(unittest.TestCase):
             code = "$ErrorActionPreference='Stop';Add-Type -TypeDefinition ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "')));[LocalBoxGuestBootstrapHeartbeat]::Start('" + directory + "',$PID);try{$s=[Diagnostics.Stopwatch]::StartNew();while(-not(Test-Path '" + directory + "/heartbeat.json') -and $s.Elapsed.TotalSeconds -lt 5){Start-Sleep -Milliseconds 10};Get-Content '" + directory + "/heartbeat.json' -Raw}finally{[LocalBoxGuestBootstrapHeartbeat]::Stop()}"
             result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
             self.assertEqual(set(json.loads(result.stdout)), {'processId', 'atUtc'})
+
+    def test_network_recovery_is_exact_and_never_recreates_images_or_vms(self):
+        source = (ROOT / 'scripts/recover-smal-guest-bootstrap-network.ps1').read_text()
+        self.assertIn("$state.phase -ne 'LB-DC01-configure-exact-guest-network'", source)
+        self.assertIn('Network effects exist or adapter identity changed', source)
+        self.assertIn('Guest protection is not ready', source)
+        self.assertIn('Original source/marker differs', source)
+        self.assertIn('originalMarkerRetained = $true', source)
+        self.assertIn('[IO.FileMode]::CreateNew', source)
+        self.assertIn('-ResumeVerified', source)
+        self.assertIn("'worker.before-network-recovery.ps1'", WORKER)
+        self.assertIn("'network-recovery-01.started'", WORKER)
+        self.assertIn("Save-BootstrapState 'resume-existing-dc-no-repeat-boot'", WORKER)
+        for forbidden in ['New-VM', 'Start-VM', 'New-VHD', 'Format-Volume', 'Initialize-Disk', 'Remove-Item', 'Stop-Service']:
+            self.assertNotIn(forbidden, source)
+
+    def test_network_recovery_renders_all_new_pinned_payloads(self):
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='boot_network_recovery_render_test')
+        files = {name: (ROOT / 'scripts' / name).read_bytes() for name in ['smal-guest-secret-functions.ps1', 'smal-guest-direct-functions.ps1']}
+        source = helpers['render_guest_bootstrap_installer']((ROOT / 'scripts/recover-smal-guest-bootstrap-network.ps1').read_bytes(), WORKER.encode(), (ROOT / 'docs/deployment-2026-10-28/local-guest-bootstrap-manifest.json').read_bytes(), files, 'f' * 40)
+        self.assertNotRegex(source, rb'__[A-Z_]+__')
+        # Reconstruct the actual backup-name expression used by the recovery.
+        code = "@('state.json','worker.ps1','bundle.json')|ForEach-Object {$_.Replace('.json','').Replace('.ps1','') + '.before-network-recovery.' + $(if($_.EndsWith('.ps1')){'ps1'}else{'json'})}|ConvertTo-Json -Compress"
+        result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(result.stdout), ['state.before-network-recovery.json', 'worker.before-network-recovery.ps1', 'bundle.before-network-recovery.json'])
 
 
 if __name__ == '__main__':

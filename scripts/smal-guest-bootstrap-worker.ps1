@@ -1,4 +1,5 @@
 # Local-only guest boot/domain/bootstrap cleanup. No Azure resource or grant calls.
+param([switch]$ResumeVerified)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\guest-bootstrap-20261028-01'
@@ -41,9 +42,19 @@ function Save-NestedNatEvidence {
     $state.natEvidence[$Name] = @{ atUtc = (Get-Date).ToUniversalTime().ToString('o'); sessions = $sessions; captureSucceeded = $captured; expectedOuterSource = '10.200.16.4'; observedSourceTranslation = ($captured -and $sessions.Count -gt 0 -and @($sessions | Where-Object ExternalSourceAddress -NE '10.200.16.4').Count -eq 0) }
 }
 try {
-    $marker = [IO.File]::Open((Join-Path $root 'execution.started'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
+    if ($ResumeVerified) {
+        $proof = Get-Content (Join-Path $root 'network-recovery-01.json') -Raw | ConvertFrom-Json
+        if ($proof.kind -ne 'verified-dc-before-network-before-directory' -or $proof.runId -ne 'guest-bootstrap-20261028-01' -or (Get-FileHash (Join-Path $root 'worker.before-network-recovery.ps1')).Hash -cne '880F2068D876507DDD0E9FC76C8D1905EAFA49A8F1CD542C42E095C4391B7E79' -or -not (Test-Path (Join-Path $root 'execution.started'))) { throw 'Exact DC-only recovery evidence differs' }
+    }
+    $markerName = if ($ResumeVerified) { 'network-recovery-01.started' } else { 'execution.started' }
+    $marker = [IO.File]::Open((Join-Path $root $markerName), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
     $initial = Get-Content $statePath -Raw | ConvertFrom-Json
     $state = [ordered]@{ runId = 'guest-bootstrap-20261028-01'; sourceCommit = $initial.sourceCommit; scope = 'approved-local-guest-boot-domain-and-secret-cleanup-only'; status = 'running'; phase = 'identity-check'; atUtc = $null; errorType = $null; errorLine = $null; guestConfiguration = @{}; cleanup = @{}; newCredentialLoginVerified = @{}; connectivity = @{}; natEvidence = @{}; domain = $null; guestUpdateAssessmentPerformed = $false; evaluationActivationVerified = $false; nodeDomainJoinPerformed = $false; azureRegistrationPerformed = $false; clusterBootstrapComplete = $false }
+    $state.errorCode = $null
+    if ($ResumeVerified) {
+        if ($proof.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Recovery source evidence missing' }
+        $state.previousSourceCommit = $initial.sourceCommit; $state.sourceCommit = $proof.sourceCommit; $state.resumedDcNetworkPhase = $true
+    }
     Save-BootstrapState 'identity-check'
     if ($env:COMPUTERNAME -ne 'LocalBox-Client' -or (Get-FileHash (Join-Path $root 'manifest.json')).Hash -cne '__MANIFEST_SHA256__' -or (Get-FileHash (Join-Path $root 'bundle.json')).Hash -cne '__BUNDLE_SHA256__') { throw 'Host/source identity differs' }
     $m = Get-Content (Join-Path $root 'manifest.json') -Raw | ConvertFrom-Json
@@ -94,12 +105,18 @@ public static class LocalBoxGuestBootstrapHeartbeat {
     if ($bundle.schemaVersion -ne 1 -or @($bundle.files).Count -ne 2 -or @(Compare-Object $expectedNames @($bundle.files | ForEach-Object name)).Count -ne 0) { throw 'Unexpected bootstrap helper bundle' }
     foreach ($item in $bundle.files) {
         $path = Join-Path $root $item.name; $bytes = [Convert]::FromBase64String($item.base64)
-        $file = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        try { $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
+        if (-not $ResumeVerified) {
+            $file = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
+        }
         if ((Get-FileHash $path).Hash -cne $item.sha256) { throw 'Bootstrap helper integrity differs' }
         . $path
     }
-    $dc = Start-ExactGuest 'LB-DC01'
+    if ($ResumeVerified) {
+        $dc = Get-VM -Id 'f94c71f1-6854-48b9-a9f1-8238c99366d0'
+        if ($dc.Name -cne 'LB-DC01' -or $dc.State.ToString() -ne 'Running') { throw 'Exact running DC recovery target differs' }
+        Save-BootstrapState 'resume-existing-dc-no-repeat-boot'
+    } else { $dc = Start-ExactGuest 'LB-DC01' }
     $dcCredential = New-StoredGuestCredential -User 'LB-DC01\Administrator' -Role 'dc-bootstrap'
     Save-BootstrapState 'LB-DC01-wait-for-setup-and-direct-session'
     $session = Wait-LabGuestSession -VmId $dc.Id -ExpectedName 'LB-DC01' -Credential $dcCredential
@@ -193,7 +210,13 @@ public static class LocalBoxGuestBootstrapHeartbeat {
     $state.status = if ($passed) { 'local-bootstrap-configured-and-checked' } else { 'local-bootstrap-configured-checks-pending' }
     Save-BootstrapState 'local-only-bootstrap-finished-no-azure-registration'
 } catch {
-    if ($state) { $state.status = 'failed-inspect-before-resume'; $state.errorType = $_.Exception.GetType().Name; $state.errorLine = $_.InvocationInfo.ScriptLineNumber; try { Save-BootstrapState $state.phase } catch { } }
+    if ($state) {
+        $state.status = 'failed-inspect-before-resume'; $state.errorType = $_.Exception.GetType().Name; $state.errorLine = $_.InvocationInfo.ScriptLineNumber
+        $state.errorCode = 'unclassified'
+        if ($_.FullyQualifiedErrorId -match '^(?<code>[A-Za-z][A-Za-z0-9_.-]{0,100})(?:,|$)') { $state.errorCode = $matches.code }
+        foreach ($code in @('Guest identity/protection differs', 'Guest adapter profile differs', 'Host MAC mapping missing or ambiguous', 'Guest adapter MAC identity differs', 'Guest adapter rename conflicts', 'Guest management IP already conflicts', 'Unexpected non-management gateway', 'Non-management address needs the reviewed ATC plan')) { if ($_.Exception.Message.Contains($code)) { $state.errorCode = $code } }
+        try { Save-BootstrapState $state.phase } catch { }
+    }
     exit 1
 } finally {
     if ($session) { Remove-PSSession -Session $session }

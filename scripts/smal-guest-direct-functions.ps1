@@ -35,7 +35,15 @@ function Set-LabGuestNetwork {
     return Invoke-Command -Session $Session -ArgumentList $VmName, $addresses[$VmName], $Adapters -ErrorAction Stop -ScriptBlock {
         param($ExpectedName, $Address, $Mapping)
         $ErrorActionPreference = 'Stop'
-        if ($env:COMPUTERNAME -cne $ExpectedName -or -not (Get-MpComputerStatus).RealTimeProtectionEnabled -or @(Get-NetFirewallProfile | Where-Object Enabled -NE $true).Count -ne 0) { throw 'Guest identity/protection differs' }
+        if ($env:COMPUTERNAME -cne $ExpectedName) { throw 'Guest identity/protection differs' }
+        $wait = [Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            $protected = $false
+            try { $protected = (Get-MpComputerStatus -ErrorAction Stop).RealTimeProtectionEnabled -and @(Get-NetFirewallProfile -ErrorAction Stop | Where-Object Enabled -NE $true).Count -eq 0 } catch { }
+            if ($protected) { break }
+            if ($wait.Elapsed.TotalSeconds -gt 180) { throw 'Guest identity/protection differs' }
+            Start-Sleep -Seconds 3
+        }
         $required = if ($ExpectedName -eq 'LB-DC01') { @('MGMT1') } else { @('MGMT1', 'MGMT2', 'STORAGEA', 'STORAGEB') }
         if (@($Mapping).Count -ne $required.Count -or @(Compare-Object $required @($Mapping | ForEach-Object Name)).Count -ne 0) { throw 'Guest adapter profile differs' }
         $macs = @($Mapping | ForEach-Object { $_.MacAddress.Replace('-', '').Replace(':', '').ToUpperInvariant() })

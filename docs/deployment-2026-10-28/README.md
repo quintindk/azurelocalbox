@@ -75,6 +75,15 @@
   The task stopped itself; DC remains running and nodes remain off. Preserve the
   original attempt and inspect exact guest identity/protection/adapter state before
   any network-only resume. Do not replay images, guest creation or V: formatting.
+- Read-only guest inspection at **11:20:02 SAST** confirmed `IMAGE_STATE_COMPLETE`,
+  correct DC/MAC identity, active Defender, all profiles enabled, only APIPA/loopback
+  IPv4, no default route, standalone domain role `2` and no NTDS service. This does
+  not establish which guard failed during the earlier attempt. The prepared
+  recovery validates that exact no-network/no-directory state again, preserves
+  worker/bundle/helper/state backups and the original marker, and resumes only
+  the running DC's network phase. It adds a bounded read-only protection-readiness
+  wait without changing Defender or firewall settings. Future failures record only
+  known public guard codes or a restricted error identifier, never raw messages.
 
 | Guest | VM ID | Memory | vCPU | State at 11:12 SAST |
 |---|---|---:|---:|---|
@@ -97,6 +106,7 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-start-20261028.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-02.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-03.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-failure-inspection-20261028.json`
 
 ## Verified starting state and recovery
 
