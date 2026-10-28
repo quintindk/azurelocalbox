@@ -35,7 +35,9 @@ try {
             $returnCode = $activation.ReturnValue; $performed = $true
         }
         $after = Get-CimInstance SoftwareLicensingProduct -Filter ("ID='" + $licenseId + "'")
-        @{ computer = $env:COMPUTERNAME; licenceId = $licenseId; beforeStatus = $before; afterStatus = $after.LicenseStatus; graceMinutes = $after.GracePeriodRemaining; activationPerformed = $performed; returnCode = $returnCode; activated = ($after.LicenseStatus -eq 1 -and $returnCode -eq 0); keyValueExported = $false }
+        # This provider may expose Activate as a void method. No thrown exception
+        # plus independently re-read Licensed state is success, not a null-code failure.
+        @{ computer = $env:COMPUTERNAME; licenceId = $licenseId; beforeStatus = $before; afterStatus = $after.LicenseStatus; graceMinutes = $after.GracePeriodRemaining; activationPerformed = $performed; returnCode = $returnCode; returnCodeProvided = ($null -ne $returnCode); activated = ($after.LicenseStatus -eq 1 -and ($null -eq $returnCode -or $returnCode -eq 0)); keyValueExported = $false }
     }
     $state.status = if ($state.result.activated) { 'evaluation-activated' } else { 'activation-not-verified-inspect-before-resume' }
 } catch { $state.status = 'failed-or-uncertain-inspect-before-resume'; $state.errorType = $_.Exception.GetType().Name }

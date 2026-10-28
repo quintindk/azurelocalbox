@@ -18,6 +18,17 @@ The DC is `26100.32230`, still in Evaluation grace, not yet activation-verified.
 Node OS licence status `1` does **not** establish Azure Local service registration
 or approve subsequent platform charges.
 
+Subsequent accepted Evaluation activation succeeded. Independent read-only
+inspection at **13:24 SAST** found DC licence status `1` (Licensed), 259,199 minutes
+of evaluation remaining, no product-key change or paid licence purchase. The first
+activation wrapper treated the provider's void return as inconclusive despite
+observing status `1`; its original receipt and pending marker are retained. The
+void-result interpretation was fixed, and activation was **not repeated**.
+See `../deployment-2026-10-27/private-ssh-dc-evaluation-activation-20261028.json` and
+`../deployment-2026-10-27/private-ssh-guest-readiness-after-eval-activation-20261028.json`.
+Update applicability remains unassessed. No generic Windows Update installation
+was attempted on the pinned HCI nodes.
+
 The current upstream template and optional AD helper are pinned and audited in
 [`registration-source-review.md`](registration-source-review.md). Neither was
 executed. Mixed-release rendered documentation incorrectly exposed the old ARB

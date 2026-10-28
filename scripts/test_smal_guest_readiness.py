@@ -33,6 +33,21 @@ class GuestReadinessTests(unittest.TestCase):
         for forbidden in ['InstallProductKey', 'SetProductKey', '/ipk', '/rearm', 'Set-Date', 'Register-Az', 'Invoke-AzStackHciArcInitialization']:
             self.assertNotIn(forbidden, source)
 
+    def test_void_activation_result_does_not_override_observed_licensed_state(self):
+        code = "$cases=@(@{status=1;code=$null},@{status=1;code=0},@{status=2;code=$null},@{status=1;code=5});@($cases|ForEach-Object {$after=@{LicenseStatus=$_.status};$returnCode=$_.code;$after.LicenseStatus -eq 1 -and ($null -eq $returnCode -or $returnCode -eq 0)})|ConvertTo-Json -Compress"
+        import json
+        result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(result.stdout), [True, True, False, False])
+
+    def test_independent_activation_readback_is_licensed_without_repeating_activation(self):
+        import json
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-guest-readiness-after-eval-activation-20261028.json').read_text())
+        self.assertEqual(receipt['status'], 'complete')
+        self.assertFalse(receipt['result']['activationPerformed'])
+        dc = next(x for x in receipt['result']['guests'] if x['name'] == 'LB-DC01')
+        self.assertEqual(dc['licenses'][0]['licenseStatus'], 1)
+        self.assertGreater(dc['licenses'][0]['graceMinutes'], 250000)
+
 
 if __name__ == '__main__':
     unittest.main()
