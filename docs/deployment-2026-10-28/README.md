@@ -23,6 +23,21 @@ the reviewed [private-console launcher](arc-authentication-handoff.md). Installi
 the launcher does not itself register a node, capture authentication output or
 resume a recurring job.
 
+At **15:26 SAST**, guest checks confirmed all **nine** normal DNS/TLS paths (three
+platform endpoints from DC and both nodes). Vault returned unauthenticated `404`,
+both Blob roots `400`, all at the expected private IPs. No hostname override or
+TLS bypass. This is separate from the authenticated operator/ARM probe above.
+
+The reviewed human console package was installed and hash-verified at **15:25 SAST**,
+status `installed-not-invoked`. No node registration has been claimed. The next
+required action is the owner's normal device-code/MFA sign-in from a real TTY using
+`scripts/register-smal-node-console.py`; output is deliberately not captured by
+the agent. See `arc-authentication-handoff.md` for exact commands and interruption
+handling. This is not a request for another generic approval or an owner-token
+export. Installed/source evidence:
+`../deployment-2026-10-27/private-ssh-install-arc-console-20261028.json` and
+`../deployment-2026-10-27/private-ssh-guest-platform-private-path-20261028.json`.
+
 ## Historical stop: unproven public-vault assumption and enforced policy
 
 **Network completion/wording correction:** Entlz completed the private endpoints

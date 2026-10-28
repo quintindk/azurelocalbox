@@ -43,6 +43,20 @@ class ArcConsoleTests(unittest.TestCase):
         self.assertNotIn('get-access-token', source)
         self.assertIn("'-o'", (ROOT / 'scripts/smal-private-powershell.py').read_text())
 
+    def test_installed_console_did_not_register_and_all_guest_private_paths_pass(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-install-arc-console-20261028.json').read_text())
+        self.assertEqual(proof['status'], 'complete')
+        self.assertFalse(proof['result']['registrationPerformed'])
+        self.assertFalse(proof['result']['consoleOutputCaptured'])
+        self.assertEqual(proof['result']['status'], 'installed-not-invoked')
+        snapshot = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-guest-platform-private-path-20261028.json').read_text())
+        self.assertEqual(snapshot['status'], 'complete')
+        self.assertEqual(len(snapshot['result']['guests']), 3)
+        for guest in snapshot['result']['guests']:
+            self.assertEqual(len(guest['platformPrivateEndpoints']), 3)
+            self.assertTrue(all(x['privateDnsMatched'] and x['normalTlsHttpResponseVerified'] for x in guest['platformPrivateEndpoints']))
+        self.assertFalse(snapshot['result']['registrationPerformed'])
+
 
 if __name__ == '__main__':
     unittest.main()

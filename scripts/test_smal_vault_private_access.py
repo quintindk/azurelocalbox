@@ -61,6 +61,19 @@ class VaultPrivateAccessTests(unittest.TestCase):
         ignored['after']['location'] = 'another-region'
         with self.assertRaises(RuntimeError): h['validate_preview'](data)
 
+    def test_live_private_probe_proves_arm_write_and_data_read_without_public_access(self):
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-28/private-vault-flow-probe.json').read_text())
+        self.assertEqual(receipt['status'], 'arm-secret-write-and-private-authenticated-read-succeeded')
+        self.assertEqual(receipt['deploymentState'], 'Succeeded')
+        self.assertTrue(receipt['privateAuthenticatedReadbackMatched'])
+        for key in ['before', 'afterArmWrite', 'after']:
+            self.assertEqual(receipt[key]['publicNetworkAccess'], 'Disabled')
+            self.assertEqual(receipt[key]['normalDnsAddresses'], ['10.200.17.11'])
+        self.assertFalse(receipt['actualCredentialUsedAsProbe'])
+        self.assertFalse(receipt['ownerTokenForwarded'])
+        self.assertFalse(receipt['purgeRequested'])
+        self.assertFalse(receipt['azureLocalRpFullDeploymentProven'])
+
 
 if __name__ == '__main__':
     unittest.main()
