@@ -2,9 +2,10 @@
 
 Date: 2026-10-27. This is a proposed plan, not platform deployment approval.
 
-**Asynchronous continuation:** [progress, checkpoints and ten-minute follow-up](bootstrap-async-control.md).
-The own-agent cron is active. The initial background readiness check is blocked on
-the remaining implementation/design decisions, not running a cluster deployment.
+**Current continuation:** [28 October state and receipts](../deployment-2026-10-28/README.md).
+The own-agent cron was explicitly cancelled and remains off. The approved one-shot
+storage task has since completed. The historical asynchronous design is retained in
+[bootstrap-async-control.md](bootstrap-async-control.md), not an active schedule.
 
 ## Progress made
 
@@ -133,13 +134,13 @@ not an installed OS, offline build inspection or successful service deployment.
 
 ## Network and apply boundaries
 
-Entlz and SMAL received the existing proposed prefix/SNAT review requests. Delivery
-is verified, but no design response has been received. Therefore the draft
+Entlz's separate read-only review completed on 28 October. It found no overlap in
+the inspected estate and identified concrete NAT/DNS corrections. Therefore the draft
 `10.64.0.0/20`, `10.65.0.0/16` and `10.66.0.0/24` prefixes remain **unreserved and
 unapplied**. The intended outbound model is SNAT to the outer-host private IP, not
 advertising un-NATed nested sources through the legacy shared catch-all.
 
-No data disk formatting/pool creation, nested VM/switch/NAT creation, new secret,
+At this document's original 27 October observation, no data disk formatting/pool creation, nested VM/switch/NAT creation, new secret,
 registration identity/grant, Azure Local registration, resource bridge, custom location,
 AKS, workload or model run was performed. No shared-network change occurred.
 The current image pin and full download verification are complete. The next platform
@@ -147,3 +148,6 @@ apply still needs the remaining dependency pins and safe replacement code, revie
 storage and nested-network plan, scoped identity, deployment terms/cost and
 mandatory-export acceptance. No further generic "continue" instruction is needed
 for that engineering preparation. Material apply decisions remain explicit.
+
+On 28 October, the explicitly approved Simple V: storage phase completed. This does
+not complete the still-unimplemented guest/network/domain and cloud deployment phases.

@@ -123,6 +123,17 @@ def main(script, name):
             prior = json.loads(pending.read_text())
             encoded_legacy = legacy_loader_for_hash(prior['renderedSourceSha256'])
         source = source.decode('utf-8').replace('__PENDING_RECOVERY_LOADER__', encoded_legacy).encode('utf-8')
+    if relative == 'scripts/start-smal-eval-media-job.ps1':
+        def exact_media_bytes(name):
+            data = (ROOT / name).read_bytes()
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Media dependency differs from committed source')
+            return data
+        decisions = json.loads(exact_media_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
+        if decisions.get('managementEvaluationMediaAndTermsApproved') is not True:
+            raise RuntimeError('Explicit Evaluation media and terms approval missing')
+        source = render_storage_installer(source, exact_media_bytes('scripts/smal-eval-media-worker.ps1'),
+                                          exact_media_bytes('docs/deployment-2026-10-28/eval-media-job-manifest.json'), head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')

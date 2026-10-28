@@ -1,6 +1,33 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Latest verified result, 09:51 SAST
+
+- The approved storage job is **storage-complete**, task result `0`. Independent
+  readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
+  The worker verified the C: boot identity and partition unchanged.
+- Original launch failure, timeout, marker, worker and state backups remain retained.
+  The corrected resume used exact-byte-length, SHA-256-verified stdin. Only the two
+  exactly identified orphan transport processes were stopped. No storage replay ran.
+- Entlz applied the approved `*.microsoft.com` HTTPS rule for `10.200.16.0/24`.
+  Host HEAD at 09:51 SAST returned **200**, exact expected **8,152,356,864 bytes**
+  and ETag for the approved Evaluation ISO. This proves that specific host request,
+  not a download, nested egress or platform readiness.
+- No nested VM, local network, domain, registration, resource bridge, custom
+  location, AKS or workload deployment is established by these receipts.
+- Relay's main task reads `done`, revision `13`, updated `2026-10-28T05:55:03.338Z`.
+  Complete comment traversal contains no closure explanation. This conflicts with
+  actual readiness. No cause is inferred and no task was reopened or redispatched.
+- The cancelled cron remains off. The storage job has no recurring trigger.
+
+Current receipts:
+
+- `../deployment-2026-10-27/private-ssh-storage-worker-recovery-framed-20261028.json`
+- `../deployment-2026-10-27/private-ssh-storage-job-progress-20261028-02.json`
+- `../deployment-2026-10-27/private-ssh-eval-media-access-post-wildcard-20261028.json`
+
 ## Verified starting state and recovery
+
+The following starting-state inventory predates the completed storage job.
 
 - Relay has no active execution/obligations in this chat. The old ten-minute cron
   is cancelled at revision 2 and is not being restarted.
@@ -92,6 +119,26 @@ and an older 2024 VHDX. Prefer the newer ISO, not the old VHDX. The evaluation i
 days and requires online activation in the first 10 days. Metadata is retained in
 `windows-server-eval-metadata.json`; no publisher SHA-256 was supplied by that page.
 Do not mislabel a measured/first-seen hash as a publisher checksum.
+
+`start-smal-eval-media-job.ps1` and `smal-eval-media-worker.ps1` implement the approved
+**download-only** continuation. The installer refuses an existing job, requires exact
+committed/pushed source and explicit recorded media/terms approval, deploys to an
+Administrator/SYSTEM-only directory, and starts one SYSTEM task with no trigger/retry.
+The worker checks host/IMDS identity, Defender, free space and exact manifest hash,
+uses normal TLS and `If-Match`, rejects redirects and ETag/length drift, and retains
+partial bytes and the original marker on failure. State records progress every 15
+seconds while bytes arrive. A blocked read can make this older, so also inspect task
+state and file length rather than treating it as an independent heartbeat.
+
+On success the file stays in the owned job directory, **unmounted and unexecuted**.
+Its measured SHA-256 is provenance, not publisher authentication. No guest answer
+file, credential, domain, VM or cloud registration is created by this task.
+
+```bash
+python3 -B scripts/smal-private-powershell.py \
+  --script scripts/read-smal-eval-media-job.ps1 \
+  --receipt your-new-eval-media-observation
+```
 
 The link-extraction tool unexpectedly traversed beyond the requested page despite the
 budget cap. That path was stopped, its reported credits retained in
