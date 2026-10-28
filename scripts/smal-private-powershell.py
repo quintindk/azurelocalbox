@@ -88,6 +88,15 @@ def render_guest_bootstrap_installer(installer, worker, manifest, helpers, commi
     return render_guest_bundle_installer(installer, worker, manifest, helpers, commit, expected)
 
 
+def render_arc_console(installer, console, approval, commit):
+    approval_hash = hashlib.sha256(approval).hexdigest().upper()
+    console = console.decode('utf-8').replace('__APPROVAL_SHA256__', approval_hash).replace('__SOURCE_COMMIT__', commit).encode('utf-8')
+    digest = hashlib.sha256(console).hexdigest().upper()
+    return (installer.decode('utf-8').replace('__CONSOLE_BASE64__', base64.b64encode(console).decode('ascii'))
+            .replace('__APPROVAL_BASE64__', base64.b64encode(approval).decode('ascii')).replace('__CONSOLE_SHA256__', digest)
+            .replace('__APPROVAL_SHA256__', approval_hash).replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
+
+
 def main(script, name):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
@@ -217,6 +226,17 @@ def main(script, name):
                 or hashlib.sha256(data[names[1]]).hexdigest() != approval.get('proposalMarkdownSha256')):
             raise RuntimeError('Exact staged cloud/local prerequisite approval missing')
         source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
+    if relative == 'scripts/install-smal-arc-console.ps1':
+        values = {}
+        for name in ['scripts/register-smal-node-console.ps1', 'docs/deployment-2026-10-28/cloud-apply-approval.json', 'docs/deployment-2026-10-28/cloud-apply-proposal.json', 'docs/deployment-2026-10-28/cloud-apply-proposal.md']:
+            values[name] = (ROOT / name).read_bytes()
+            if values[name] != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT): raise RuntimeError('Console/approval source differs from HEAD')
+        approval = json.loads(values['docs/deployment-2026-10-28/cloud-apply-approval.json'])
+        if (approval.get('humanDeviceCodeAuthenticationApproved') is not True or approval.get('existingArmTokenForwardingApproved') is not False
+                or hashlib.sha256(values['docs/deployment-2026-10-28/cloud-apply-proposal.json']).hexdigest() != approval.get('proposalJsonSha256')
+                or hashlib.sha256(values['docs/deployment-2026-10-28/cloud-apply-proposal.md']).hexdigest() != approval.get('proposalMarkdownSha256')):
+            raise RuntimeError('Exact device-code registration approval missing')
+        source = render_arc_console(source, values['scripts/register-smal-node-console.ps1'], values['docs/deployment-2026-10-28/cloud-apply-approval.json'], head)
     if relative == 'scripts/start-smal-guest-image-job.ps1':
         def exact_guest_bytes(name):
             data = (ROOT / name).read_bytes()

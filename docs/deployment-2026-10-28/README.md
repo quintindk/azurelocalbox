@@ -1,6 +1,29 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Current apply stop: inherited vault policy
+## Current progress: private ARM secret path verified
+
+The public-vault assumption has now been tested rather than treated as an absolute
+deployment blocker. With PNA **Disabled**, a modern ARM secret-child write succeeded
+and authenticated private readback matched the exact harmless marker through
+`10.200.17.11`. The owned probe was soft-deleted, not purged. See
+`private-vault-flow-probe.json`. No real deployment credential was used as a probe,
+no owner ARM token forwarded, no public toggle, tag or exemption.
+
+Initial private metadata access reached Key Vault but returned `ForbiddenByRbac`.
+The explicitly approved conditional **Secrets Officer** grant was applied only at
+the new vault for the existing deployer, then private authenticated access passed.
+The original pre-apply what-if refusal is retained: unchanged `Ignore` resources
+and omitted principal-type metadata were reconciled without permitting extra
+effects. The actual created assignment's identity/type/scope were read back.
+
+This verifies the ARM secret-publication/private-operator path, not full Azure Local
+RP deployment. That later step must be tested with actual Arc managed identities.
+Proceed privately. The next human step is the normal device-code/MFA sign-in via
+the reviewed [private-console launcher](arc-authentication-handoff.md). Installing
+the launcher does not itself register a node, capture authentication output or
+resume a recurring job.
+
+## Historical stop: unproven public-vault assumption and enforced policy
 
 **Network completion/wording correction:** Entlz completed the private endpoints
 at 14:06 SAST. Their approved connections, owned DNS records and deployment-host

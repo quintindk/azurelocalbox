@@ -47,6 +47,19 @@ foreach ($target in $targets) {
                 @{ name = $_; available = [bool]$command; module = $command.ModuleName; version = $(if ($command.Module) { $command.Module.Version.ToString() } else { $null }); sourceSha256 = $(if ($command.Module -and $command.Module.Path -and (Test-Path $command.Module.Path)) { (Get-FileHash $command.Module.Path).Hash } else { $null }); parameters = $(if ($command) { @($command.Parameters.Keys | Where-Object { $_ -notmatch '(?i:password|access_token|refresh_token|ArmAccessToken)' } | Sort-Object) } else { @() }) }
             }
             $result = @{ name = $env:COMPUTERNAME; atUtc = [datetime]::UtcNow.ToString('o'); product = $version.ProductName; edition = $version.EditionID; build = ($version.CurrentBuild + '.' + $version.UBR); licenses = $licenses; commands = @($commands); updatesInstalled = @(Get-HotFix -ErrorAction SilentlyContinue | Sort-Object InstalledOn -Descending | Select-Object -First 8 HotFixID, InstalledOn); updateApplicabilityAssessed = $false; defenderEnabled = (Get-MpComputerStatus).RealTimeProtectionEnabled; firewallProfilesEnabled = @(Get-NetFirewallProfile | Where-Object Enabled -NE $true).Count -eq 0; domainRole = (Get-CimInstance Win32_ComputerSystem).DomainRole }
+            $result.platformPrivateEndpoints = @()
+            foreach ($endpoint in @(@{ name = 'kv-lbox-weu-4766ea.vault.azure.net'; ip = '10.200.17.11' }, @{ name = 'stlboxdiagweu4766ea.blob.core.windows.net'; ip = '10.200.17.9' }, @{ name = 'stlboxwitweu4766ea.blob.core.windows.net'; ip = '10.200.17.10' })) {
+                $row = @{ fqdn = $endpoint.name; expectedIp = $endpoint.ip; actualIps = @(); privateDnsMatched = $false; httpsStatus = $null; normalTlsHttpResponseVerified = $false; authenticatedDataAccessTested = $false }
+                try { $row.actualIps = @(Resolve-DnsName -Name $endpoint.name -Type A -DnsOnly -QuickTimeout -ErrorAction Stop | Where-Object IPAddress | ForEach-Object IPAddress); $row.privateDnsMatched = $row.actualIps.Count -eq 1 -and $row.actualIps[0] -ceq $endpoint.ip } catch { }
+                if ($row.privateDnsMatched) {
+                    $request = [Net.HttpWebRequest]::Create('https://' + $endpoint.name + '/')
+                    $request.Method = 'HEAD'; $request.AllowAutoRedirect = $false; $request.UseDefaultCredentials = $false; $request.Timeout = 15000
+                    try { $response = $request.GetResponse(); try { $row.httpsStatus = [int]$response.StatusCode } finally { $response.Close() } }
+                    catch [Net.WebException] { if ($_.Exception.Response) { $row.httpsStatus = [int]$_.Exception.Response.StatusCode; $_.Exception.Response.Close() } }
+                    $row.normalTlsHttpResponseVerified = $null -ne $row.httpsStatus
+                }
+                $result.platformPrivateEndpoints += $row
+            }
             if ($ExpectedName -eq 'LB-DC01') {
                 Import-Module ActiveDirectory
                 $result.preexistingTargetOu = @(Get-ADOrganizationalUnit -Filter "Name -eq 'AzureLocal' -or Name -eq 'LocalBox'" | Select-Object Name, DistinguishedName)

@@ -1,5 +1,19 @@
 # Deployment blocker: product vault prerequisite versus inherited policy
 
+## Superseded blanket blocker: actual private ARM flow passed
+
+Subsequent controlled testing succeeded with `publicNetworkAccess=Disabled` at
+every boundary: ARM created one non-credential secret child, and an authenticated
+private read returned its exact marker through `10.200.17.11`. Only that owned
+probe was soft-deleted, without purge. `private-vault-flow-probe.json` contains the
+receipt. The required operator data role was the previously approved vault-only
+Secrets Officer assignment, not a network opening or broad grant.
+
+The policy rewrite below remains a confirmed fact. It is **not a blanket block on
+the tested ARM secret-publication path**. Continue privately and verify actual
+Azure Local RP/node-identity operations in the service validation step. Full
+platform success is not inferred from this probe. See `arc-authentication-handoff.md`.
+
 ## Clarification after network completion
 
 Entlz completed the three private endpoints at **14:06 SAST**, with successful
@@ -17,7 +31,10 @@ Private DNS/TLS alone also does not prove RBAC/secret operations. Keep public ac
 Disabled while that exact caller/operation path is verified. Do not infer either
 that public access is technically unavoidable or that RP access is already proven.
 
-**Arc registration and cluster deployment are stopped. Do not retry the completed
+The sections below retain the **historical** stop and evidence. The superseding
+private-path result above controls the next action, not the earlier blanket stop.
+
+**Original decision:** Arc registration and cluster deployment were stopped. Do not retry the completed
 prerequisite deployment or enable public access again.** Local preparation is
 complete and the approved owned cloud prerequisite resources exist.
 
