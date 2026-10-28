@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 10:31 SAST
+## Latest verified result, 11:16 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -12,8 +12,9 @@
   Host HEAD at 09:51 SAST returned **200**, exact expected **8,152,356,864 bytes**
   and ETag for the approved Evaluation ISO. This proves that specific host request,
   not a download, nested egress or platform readiness.
-- No nested VM, domain, registration, resource bridge, custom location, AKS or
-  workload deployment is established by these receipts.
+- Three nested VMs have now been created. Domain readiness, registration,
+  resource bridge, custom location, AKS and workloads are **not established** by
+  the current observations.
 - Relay's main task reads `done`, revision `13`, updated `2026-10-28T05:55:03.338Z`.
   Complete comment traversal contains no closure explanation. This conflicts with
   actual readiness. No cause is inferred and no task was reopened or redispatched.
@@ -58,6 +59,28 @@
   exact bundle rendering, source pins, consent hash, metadata selection, new-VHD
   identity guards, synthetic secret/XML handling and no import-time side effects.
   These are not a completed guest boot or domain integration test.
+- The image/VM task finished successfully at **11:11:03 SAST**, task result `0`.
+  All three OS images and Gen2/Secure Boot/vTPM VM definitions were verified.
+  Node data VHDXs are created, not an S2D pool. The provisioning snapshot's zero
+  dynamic MACs were captured while the VMs were off, not a live MAC mapping.
+- The independently installed local continuation is running. It reconciled that
+  exact successful image task, started `LB-DC01` and was waiting for completed
+  Windows setup/PowerShell Direct at **11:12:29 SAST**. Its timer heartbeat was
+  current. The two nodes remained off until the DC stage completes. No Azure
+  registration is included in this job. The cancelled cron remains off.
+- At **11:16:04 SAST**, continuation readback showed a guarded failure at
+  `LB-DC01-configure-exact-guest-network`, `RemoteException`, source line `35`,
+  task result `1`. Windows setup and the initial PowerShell Direct session passed
+  before that call. No forest/rotation/nested-connectivity success is claimed.
+  The task stopped itself; DC remains running and nodes remain off. Preserve the
+  original attempt and inspect exact guest identity/protection/adapter state before
+  any network-only resume. Do not replay images, guest creation or V: formatting.
+
+| Guest | VM ID | Memory | vCPU | State at 11:12 SAST |
+|---|---|---:|---:|---|
+| `LB-DC01` | `f94c71f1-6854-48b9-a9f1-8238c99366d0` | 4 GiB | 2 | Running, setup/session pending |
+| `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Off, awaiting DC stage |
+| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Off, awaiting DC stage |
 
 Current receipts:
 
@@ -70,6 +93,10 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-local-network-readback-20261028.json`
 - `../deployment-2026-10-27/private-ssh-guest-input-inspection-complete-20261028.json`
 - `../deployment-2026-10-27/private-ssh-guest-cmdlet-inventory-reconciled-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-image-job-progress-20261028-05.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-start-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-02.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-03.json`
 
 ## Verified starting state and recovery
 
@@ -263,6 +290,11 @@ configuration complete with checks still pending. Even a clean selected-check
 result leaves `clusterBootstrapComplete=false` and is not cloud deployment approval.
 Guest update applicability and Evaluation activation are not verified by this
 continuation. A pinned OS image/version is not an up-to-date security/activation claim.
+
+The remaining [cloud deployment gates](cloud-deployment-next-gates.md) are separate
+from the approved local work. Fresh provider metadata advertises West Europe for
+both HCI clusters and bridge appliances, not South Africa North. This does not
+select a region, API version, identity flow, cost or export policy by implication.
 
 ```bash
 python3 -B scripts/smal-private-powershell.py \
