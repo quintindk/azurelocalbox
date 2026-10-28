@@ -157,6 +157,18 @@ def main(script, name):
             raise RuntimeError('Prior inspection/process attachments not reconciled')
         source = render_storage_installer(source, exact_input_bytes('scripts/smal-guest-input-worker.ps1'),
                                           exact_input_bytes('docs/deployment-2026-10-28/guest-input-job-manifest.json'), head)
+    if relative == 'scripts/apply-smal-local-network.ps1':
+        decisions_path = 'docs/deployment-2026-10-28/deployment-decisions.json'
+        proposal_path = 'docs/deployment-2026-10-28/local-guest-apply-proposal.md'
+        decisions_bytes = (ROOT / decisions_path).read_bytes()
+        proposal_bytes = (ROOT / proposal_path).read_bytes()
+        for name, data in [(decisions_path, decisions_bytes), (proposal_path, proposal_bytes)]:
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Network approval source differs from committed bytes')
+        decisions = json.loads(decisions_bytes)
+        if decisions.get('localGuestPlanApproved') is not True or decisions.get('localAddressAllocationConfirmedByOwner') is not True or hashlib.sha256(proposal_bytes).hexdigest() != decisions.get('localGuestPlanSha256'):
+            raise RuntimeError('Exact local network allocation approval missing')
+        source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
