@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 11:52 SAST
+## Latest verified result, 12:01 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -120,12 +120,22 @@
   cleanup/rotation before proceeding to node 2. Shared read handles tolerate active
   setup-log writers. Unreadable/unclean files remain explicit review gates, never a
   clean-result claim. Both nodes also get a bounded read-only UTC/source check.
+- At **12:01:48 SAST**, the cleanup-only resume had retained the DC proof, finished
+  node 1 cleanup/rotation and verified its new-credential login. There were no
+  unreadable setup files or remaining answer-file/log review flags. Its existing
+  answer file was already removed during the previous attempt, so the resumed
+  removal count correctly remains `0`, not another fabricated deletion.
+- Node 1's clock/source check passed, observed offset about **-0.015 seconds**,
+  Windows Time running with `time.windows.com,0x8`, no manual clock change. Its
+  repeated selected transport and source-translation checks passed. Node 2 is now
+  running and completing initial setup/PowerShell Direct readiness. Azure Local
+  registration/deployment remains excluded, not silently queued.
 
-| Guest | VM ID | Memory | vCPU | State at 11:45 SAST |
+| Guest | VM ID | Memory | vCPU | State at 12:01 SAST |
 |---|---|---:|---:|---|
 | `LB-DC01` | `f94c71f1-6854-48b9-a9f1-8238c99366d0` | 4 GiB | 2 | Running, domain/DNS and selected transport checks passed |
-| `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Running, nested Hyper-V/transport passed, cleanup/clock pending |
-| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Off, awaiting node 1 stage |
+| `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Running, selected checks/cleanup/clock/new login passed |
+| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Running, setup/session pending |
 
 Current receipts:
 
@@ -147,6 +157,8 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-03.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-04.json`
 - `../deployment-2026-10-27/private-ssh-node01-cleanup-failure-inspection-20261028.json`
+- `../deployment-2026-10-27/private-ssh-node01-cleanup-recovery-20261028.json`
+- `../deployment-2026-10-27/private-ssh-node-cleanup-recovery-progress-20261028-01.json`
 
 ## Verified starting state and recovery
 
