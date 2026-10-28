@@ -2,6 +2,14 @@
 
 ## Current apply stop: inherited vault policy
 
+**Network completion/wording correction:** Entlz completed the private endpoints
+at 14:06 SAST. Their approved connections, owned DNS records and deployment-host
+private DNS/TLS are verified. See `platform-network-result.json`. The remaining
+question is the Azure-hosted RP/selected ARM secret flow, not missing private
+networking. Microsoft's public-access note is explicit, but private-only deployment
+failure has not been demonstrated here. Keep the vault private while checking that
+specific path, rather than treating the note as proof public access is unavoidable.
+
 **The approved cloud prerequisite deployment succeeded, but its independent
 configuration guard stopped further platform apply.** The new vault is public
 access **Disabled**, despite the approved template/preview requesting Enabled.

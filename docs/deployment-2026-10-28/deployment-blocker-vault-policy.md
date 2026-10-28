@@ -1,5 +1,22 @@
 # Deployment blocker: product vault prerequisite versus inherited policy
 
+## Clarification after network completion
+
+Entlz completed the three private endpoints at **14:06 SAST**, with successful
+private DNS/TLS from the deployment host. Vault resolves to `10.200.17.11`, diagnostic
+Blob `.9`, witness Blob `.10`. Source report/receipt hashes were independently
+matched. See `platform-network-result.json`. This work is done, not still pending.
+
+The public-access requirement below is **documented guidance, not a demonstrated
+private-only service failure in this deployment**. The earlier categorical wording
+was too strong. Confirmed facts are the policy rewrite and the private host path.
+Unconfirmed is whether the selected ARM/RP secret-configuration flow can complete
+while the vault remains private. Operator/node data-plane access, ARM resource
+operations and the Azure-hosted RP's data-plane access must not be conflated.
+Private DNS/TLS alone also does not prove RBAC/secret operations. Keep public access
+Disabled while that exact caller/operation path is verified. Do not infer either
+that public access is technically unavoidable or that RP access is already proven.
+
 **Arc registration and cluster deployment are stopped. Do not retry the completed
 prerequisite deployment or enable public access again.** Local preparation is
 complete and the approved owned cloud prerequisite resources exist.
