@@ -2,8 +2,11 @@
 
 ## Current outcome
 
-**Recurring follow-up is installed and active. The actual cluster bootstrap has not
-started.** The safe implementation and specific design/apply decisions remain blockers.
+**Current correction:** the recurring follow-up was cancelled by Quintin and the node
+confirmed revision 2. Relay's former conflicted occurrence was subsequently disposed
+of through the recovery work. It is not being resumed or replaced. The installation
+details below are historical. See [28 October continuation](../deployment-2026-10-28/README.md)
+for the separately approved local storage job. Full cluster deployment is not complete.
 
 Quintin explicitly requested asynchronous work, progress checks and a cron follow-up.
 That authorises the asynchronous preparation and follow-up, not execution of the

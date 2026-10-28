@@ -1,0 +1,22 @@
+{
+  "humanRequest": "please complete the bootstrap and then deploy.",
+  "storageQuestion": "Approve using the eight confirmed blank 256 GiB data disks, Azure LUNs 0–7, for the LocalBox V: volume? The 1 TiB OS disk is excluded. Simple provides roughly 2 TiB with no disk-level redundancy. A two-way mirror provides roughly 1 TiB.",
+  "storageAnswer": "Simple 2 TiB (Recommended)",
+  "simpleStorageFormattingApproved": true,
+  "storageIdentityEvidence": "nvme-data-disk-map.json",
+  "osDiskExcluded": true,
+  "networkQuestion": "May I assign Entlz a bounded, read-only review of the proposed nested prefixes, SNAT and DNS? The assignment will not permit shared-network changes, and I will wait for factual review before applying the nested network.",
+  "networkAnswer": "Delegate Entlz review",
+  "readOnlyNetworkReviewDelegationApproved": true,
+  "networkReviewTaskId": "task_localbox_nested_network_review_20261028",
+  "networkReviewExecutionId": "exec_localbox_nested_network_review_20261028",
+  "networkResourceChangesApprovedByThisAnswer": false,
+  "managementOsQuestion": "For the existing AD-backed LocalBox design, approve downloading and using current Windows Server 2025 Evaluation media for the management/domain infrastructure, under its licence/privacy terms and time-limited evaluation? This replaces the unaccepted April 2024 management image. It does not purchase a paid guest licence.",
+  "managementOsAnswer": "Approve evaluation media",
+  "managementEvaluationMediaAndTermsApproved": true,
+  "evaluationDays": 180,
+  "paidGuestLicencePurchased": false,
+  "cloudRegistrationScopeAndCostsApprovedByTheseAnswers": false,
+  "newRoleGrantsApprovedByTheseAnswers": false,
+  "cronRestartApproved": false
+}

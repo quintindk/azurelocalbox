@@ -6,6 +6,7 @@ Never put secrets in a script, argument or output. The private key stays local.
 import argparse
 import base64
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -60,6 +61,20 @@ def main(script, name):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
+    if relative == 'scripts/start-smal-storage-job.ps1':
+        def exact_bytes(name):
+            data = (ROOT / name).read_bytes()
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Storage dependency differs from committed source')
+            return data
+        decisions = json.loads(exact_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
+        if decisions.get('simpleStorageFormattingApproved') is not True:
+            raise RuntimeError('Explicit Simple storage approval missing')
+        manifest = exact_bytes('docs/deployment-2026-10-28/storage-job-manifest.json')
+        manifest_hash = hashlib.sha256(manifest).hexdigest().upper()
+        worker = exact_bytes('scripts/smal-storage-worker.ps1').decode().replace('__MANIFEST_SHA256__', manifest_hash).encode()
+        worker_hash = hashlib.sha256(worker).hexdigest().upper()
+        source = source.decode().replace('__MANIFEST_BASE64__', base64.b64encode(manifest).decode()).replace('__WORKER_BASE64__', base64.b64encode(worker).decode()).replace('__MANIFEST_SHA256__', manifest_hash).replace('__WORKER_SHA256__', worker_hash).replace('__SOURCE_COMMIT__', head).encode()
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
