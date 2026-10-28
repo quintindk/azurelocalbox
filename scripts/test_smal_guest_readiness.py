@@ -18,7 +18,8 @@ class GuestReadinessTests(unittest.TestCase):
         for forbidden in ['Activate(', '/ato', 'Install-WindowsUpdate', 'New-ADUser', 'New-ADOrganizationalUnit', 'Set-GPInheritance', 'Register-Az', 'Invoke-AzStackHciArcInitialization -', 'Get-AzAccessToken', 'Set-Date']:
             self.assertNotIn(forbidden, source)
         self.assertIn('New-PSSession -VMId $vm.Id', source)
-        self.assertIn("-Role $target.role", source)
+        self.assertIn("-Role $secretRole", source)
+        self.assertIn('Verified cluster credential binding differs', source)
         self.assertIn('licenseStatus = $_.LicenseStatus', source)
         self.assertNotIn('partialKey =', source)
         self.assertIn('updateApplicabilityAssessed = $false', source)

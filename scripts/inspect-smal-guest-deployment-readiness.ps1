@@ -19,7 +19,17 @@ $results = @()
 foreach ($target in $targets) {
     $vm = Get-VM -Id $target.id
     if ($vm.Name -cne $target.name -or $vm.State.ToString() -ne 'Running') { throw 'Guest identity/state differs' }
-    $secure = Read-LabGuestSecureSecret -SecretDirectory (Join-Path $imageRoot 'secrets') -Role $target.role
+    $secretDirectory = Join-Path $imageRoot 'secrets'; $secretRole = $target.role
+    $bindingPath = 'C:\ProgramData\AzureLocalBox\Bootstrap\cluster-prereqs-20261028-01\credential-bindings.json'
+    if ($target.name -ne 'LB-DC01' -and (Test-Path $bindingPath)) {
+        $bindings = Get-Content $bindingPath -Raw | ConvertFrom-Json
+        $binding = $bindings.nodes.PSObject.Properties[$target.name].Value
+        if ($binding) {
+            if ($bindings.runId -ne 'cluster-prereqs-20261028-01' -or $binding.vmId -ine $target.id -or $binding.loginVerified -ne $true -or $binding.role -cne 'cluster-node-admin' -or $binding.secretDirectory -cne 'C:\ProgramData\AzureLocalBox\Bootstrap\cluster-prereqs-20261028-01\secrets') { throw 'Verified cluster credential binding differs' }
+            $secretDirectory = $binding.secretDirectory; $secretRole = $binding.role
+        }
+    }
+    $secure = Read-LabGuestSecureSecret -SecretDirectory $secretDirectory -Role $secretRole
     $session = $null
     try {
         $session = New-PSSession -VMId $vm.Id -Credential ([pscredential]::new($target.user, $secure)) -ErrorAction Stop

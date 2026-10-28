@@ -200,6 +200,23 @@ def main(script, name):
         if decisions.get('managementEvaluationMediaAndTermsApproved') is not True or decisions.get('localGuestMediaInstallationAndRebootsApproved') is not True:
             raise RuntimeError('Accepted Evaluation use/terms approval missing')
         source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
+    if relative == 'scripts/prepare-smal-cluster-prereqs.ps1':
+        names = ['docs/deployment-2026-10-28/cloud-apply-proposal.json',
+                 'docs/deployment-2026-10-28/cloud-apply-proposal.md',
+                 'docs/deployment-2026-10-28/cloud-apply-approval.json']
+        data = {}
+        for name in names:
+            value = (ROOT / name).read_bytes()
+            if value != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Cloud proposal/approval differs from committed source')
+            data[name] = value
+        approval = json.loads(data[names[2]])
+        if (approval.get('approved') is not True or approval.get('sharedClusterOnlyNodeAdminCredentialApproved') is not True
+                or approval.get('newClusterOuGpoBlockAndScopedLcmDelegationApproved') is not True
+                or hashlib.sha256(data[names[0]]).hexdigest() != approval.get('proposalJsonSha256')
+                or hashlib.sha256(data[names[1]]).hexdigest() != approval.get('proposalMarkdownSha256')):
+            raise RuntimeError('Exact staged cloud/local prerequisite approval missing')
+        source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
     if relative == 'scripts/start-smal-guest-image-job.ps1':
         def exact_guest_bytes(name):
             data = (ROOT / name).read_bytes()
@@ -289,6 +306,7 @@ def main(script, name):
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
                      'scripts/activate-smal-dc-evaluation.ps1': 300,
+                     'scripts/prepare-smal-cluster-prereqs.ps1': 600,
                      'scripts/inspect-smal-guest-inputs.ps1': 300,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     record['guestCommandTimeoutSeconds'] = guest_timeout

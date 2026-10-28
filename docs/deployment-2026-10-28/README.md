@@ -2,11 +2,27 @@
 
 ## Continuing toward registration
 
-The next reviewed owner decision is now concrete:
+The reviewed owner decision is now concrete:
 [`cloud-apply-proposal.md`](cloud-apply-proposal.md) and its exact JSON effect list.
-It remains unapproved/unapplied. New resource names were available when checked,
+Quintin answered **Approve staged plan**. The immutable proposal hashes and exact
+accepted/excluded effects are recorded in `cloud-apply-approval.json`. This is not
+an unrestricted cloud/RBAC/network grant. New resource names were available when checked,
 the new platform RG was absent, first-party RP/role IDs were inspected and no
 application/role/provider/resource was created by these reads.
+
+Entlz's separate bounded platform network task/execution is
+`task_localbox_platform_network_20261028` / `exec_localbox_platform_network_20261028`.
+It may prepare now, but private-endpoint apply waits for the underlying platform
+vault/storage to exist and coordinator readiness. No new central zone/link outside
+the enumerated effect list is assumed. The terminal main task was not reopened.
+
+The next applies are source-gated: exactly one new platform RG, and the approved
+local OU/common-node-credential preparation. The latter preserves domain password
+policy/expiry, uses no third-party AD module, refuses existing object conflicts,
+and commits each node's new credential binding only after its new login is verified.
+Existing node-specific encrypted roles are retained as inactive history after
+convergence, not overwritten with a common value. Any partial failure is inspected,
+never resolved by replaying the whole preparation or deleting AD objects.
 
 Fresh guest inspection at **13:06 SAST** verified both installed HCI OS builds
 `26100.33650`, standalone nodes, zero S2D pools and exactly four RAW 170 GiB data

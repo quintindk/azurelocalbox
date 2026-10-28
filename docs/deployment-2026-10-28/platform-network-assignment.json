@@ -1,0 +1,17 @@
+{
+  "taskId": "task_localbox_platform_network_20261028",
+  "executionId": "exec_localbox_platform_network_20261028",
+  "taskRevisionAtDispatch": 1,
+  "stateAtRequest": "requested",
+  "targetAgentId": "agent_0d9dc96a-7986-4b84-ba98-aff323c2081e",
+  "targetWorkspace": "/home/quintin/play/entlz",
+  "explicitDelegationApproval": "cloud-apply-approval.json",
+  "scope": "three new platform PEs/DNS/exact-hostname admission only",
+  "targetResourcesNotYetCreatedAtDispatch": true,
+  "applyRequiresCoordinatorTargetReadiness": true,
+  "unlistedSharedZoneOrLinkCreationRequiresReview": true,
+  "sharedSmalApplicationPublicAccessChangesAllowed": false,
+  "taskCreationIsNotProofOfNetworkApplication": true,
+  "mainTaskReopened": false,
+  "furtherDelegationAllowed": false
+}
