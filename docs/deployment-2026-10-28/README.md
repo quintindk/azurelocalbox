@@ -225,3 +225,47 @@ python3 -B scripts/smal-private-powershell.py \
   --script scripts/read-smal-guest-image-job.ps1 \
   --receipt your-new-guest-image-observation
 ```
+
+## Local boot and domain continuation
+
+`start-smal-guest-bootstrap-job.ps1` installs a second bounded one-shot job, not a
+cron or another model execution. It waits for the **exact pinned image worker** to
+finish successfully with the three VMs off. A failed/stopped/drifted dependency
+blocks guest boot. It never reinstalls or restarts the image task.
+
+The continuation is limited to the approved local work:
+
+- Start only the recorded VM IDs after security and host-memory admission checks.
+- Wait for completed Windows setup and use immediate-host PowerShell Direct with
+  per-guest credentials. Authentication failures stop rather than repeatedly
+  testing a credential until an account locks.
+- Bind guest NIC names to exact Hyper-V MACs, apply the accepted management
+  addresses/DNS and leave storage adapters without a gateway or DNS registration.
+- Create the new AD forest with Windows Server 2016 functional levels, normal
+  password policy, AD DNS forwarding only to `10.204.0.4` and the selected DC time
+  peer. Reboot only that new DC as required, then verify changed boot identity.
+- Verify/install nested Hyper-V on the two nodes and perform required guest-only
+  reboots. Nodes remain **standalone**, not domain-joined ahead of the versioned
+  Azure Local deployment workflow.
+- Test domain SRV, normal/TCP private DNS, public/private HTTPS HEAD and matched NTP
+  responses from each guest. Capture actual WinNAT source-session evidence. These
+  checks do not prove authenticated PaaS access, clock synchronisation, WebSockets,
+  image pulls, AKS or platform readiness.
+- Remove only answer-file copies attributable to this run/value, rotate the initial
+  credential and prove a new credential login. Inspect setup logs for the old value
+  without rewriting history. Any match remains a review gate even after rotation.
+- Record task/phase state, append-only public events and an independent 15-second
+  timer heartbeat. Failures retain markers/objects for inspection, not blind replay.
+
+**It never registers an Azure resource, forwards an ARM token, creates Azure roles,
+joins the nodes to AD, deploys AKS or starts a workload.** The result can be local
+configuration complete with checks still pending. Even a clean selected-check
+result leaves `clusterBootstrapComplete=false` and is not cloud deployment approval.
+Guest update applicability and Evaluation activation are not verified by this
+continuation. A pinned OS image/version is not an up-to-date security/activation claim.
+
+```bash
+python3 -B scripts/smal-private-powershell.py \
+  --script scripts/read-smal-guest-bootstrap-job.ps1 \
+  --receipt your-new-local-bootstrap-observation
+```

@@ -66,8 +66,7 @@ def render_storage_installer(installer, worker, manifest, commit):
             .replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
-def render_guest_image_installer(installer, worker, manifest, helpers, commit):
-    expected = {'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1'}
+def render_guest_bundle_installer(installer, worker, manifest, helpers, commit, expected):
     if set(helpers) != expected or not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise RuntimeError('Exact guest helper set/source commit required')
     bundle = json.dumps({'schemaVersion': 1, 'files': [
@@ -77,6 +76,16 @@ def render_guest_image_installer(installer, worker, manifest, helpers, commit):
     installer = installer.decode('utf-8').replace('__BUNDLE_BASE64__', base64.b64encode(bundle).decode('ascii')).replace('__BUNDLE_SHA256__', digest).encode('utf-8')
     worker = worker.decode('utf-8').replace('__BUNDLE_SHA256__', digest).encode('utf-8')
     return render_storage_installer(installer, worker, manifest, commit)
+
+
+def render_guest_image_installer(installer, worker, manifest, helpers, commit):
+    expected = {'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1'}
+    return render_guest_bundle_installer(installer, worker, manifest, helpers, commit, expected)
+
+
+def render_guest_bootstrap_installer(installer, worker, manifest, helpers, commit):
+    expected = {'smal-guest-secret-functions.ps1', 'smal-guest-direct-functions.ps1'}
+    return render_guest_bundle_installer(installer, worker, manifest, helpers, commit, expected)
 
 
 def main(script, name):
@@ -200,6 +209,27 @@ def main(script, name):
             'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1']}
         source = render_guest_image_installer(source, exact_guest_bytes('scripts/smal-guest-image-worker.ps1'),
                                               exact_guest_bytes('docs/deployment-2026-10-28/local-guest-image-manifest.json'), helpers, head)
+    if relative == 'scripts/start-smal-guest-bootstrap-job.ps1':
+        def exact_bootstrap_bytes(name):
+            data = (ROOT / name).read_bytes()
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Guest bootstrap dependency differs from committed source')
+            return data
+        decisions = json.loads(exact_bootstrap_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
+        proposal = exact_bootstrap_bytes('docs/deployment-2026-10-28/local-guest-apply-proposal.md')
+        if (hashlib.sha256(proposal).hexdigest() != decisions.get('localGuestPlanSha256')
+                or decisions.get('domainCreationApproved') != 'ad.localbox.test'
+                or any(decisions.get(key) is not True for key in ['localGuestPlanApproved', 'localGuestMediaInstallationAndRebootsApproved', 'hostBoundDpapiGuestSecretsApproved', 'temporaryGuestImageAnswerFileSecretApproved'])):
+            raise RuntimeError('Exact guest boot/domain/secret consent missing')
+        manifest = exact_bootstrap_bytes('docs/deployment-2026-10-28/local-guest-bootstrap-manifest.json')
+        dependency = json.loads((OUT / 'private-ssh-guest-image-job-start-20261028.json').read_text())
+        pinned = json.loads(manifest)
+        if (dependency.get('status') != 'complete' or dependency.get('result', {}).get('sourceCommit') != pinned['imageSourceCommit']
+                or dependency.get('result', {}).get('workerSha256') != pinned['imageWorkerSha256']):
+            raise RuntimeError('Exact image job launch not reconciled; do not queue boot')
+        helpers = {name: exact_bootstrap_bytes('scripts/' + name) for name in [
+            'smal-guest-secret-functions.ps1', 'smal-guest-direct-functions.ps1']}
+        source = render_guest_bootstrap_installer(source, exact_bootstrap_bytes('scripts/smal-guest-bootstrap-worker.ps1'), manifest, helpers, head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
