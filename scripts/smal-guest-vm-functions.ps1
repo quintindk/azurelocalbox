@@ -18,7 +18,7 @@ function New-LabGuestVm {
     if ($networkState.status -ne 'local-network-created' -or $switch.SwitchType.ToString() -ne 'Internal' -or $switch.Id.ToString() -cne $networkState.switchId) { throw 'Approved internal network identity differs' }
     $guardian = Get-HgsGuardian -Name $GuardianName
     & $Checkpoint ($VmName + '-create-generation2-vm')
-    $vm = New-VM -Name $VmName -MemoryStartupBytes $profile.memory -VHDPath $OsDiskPath -Generation 2 -Path $directory
+    $vm = New-VM -Name $VmName -MemoryStartupBytes $profile.memory -VHDPath $OsDiskPath -Generation 2 -BootDevice VHD -Path $directory
     # From here all changes are bound to this newly returned VM, never a VM wildcard.
     Set-VM -VM $vm -CheckpointType Disabled -AutomaticStartAction Nothing -AutomaticStopAction ShutDown
     Set-VMMemory -VM $vm -DynamicMemoryEnabled $false

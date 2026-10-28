@@ -66,6 +66,19 @@ def render_storage_installer(installer, worker, manifest, commit):
             .replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
+def render_guest_image_installer(installer, worker, manifest, helpers, commit):
+    expected = {'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1'}
+    if set(helpers) != expected or not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise RuntimeError('Exact guest helper set/source commit required')
+    bundle = json.dumps({'schemaVersion': 1, 'files': [
+        {'name': name, 'sha256': hashlib.sha256(data).hexdigest().upper(), 'base64': base64.b64encode(data).decode('ascii')}
+        for name, data in sorted(helpers.items())]}, separators=(',', ':'), sort_keys=True).encode('utf-8')
+    digest = hashlib.sha256(bundle).hexdigest().upper()
+    installer = installer.decode('utf-8').replace('__BUNDLE_BASE64__', base64.b64encode(bundle).decode('ascii')).replace('__BUNDLE_SHA256__', digest).encode('utf-8')
+    worker = worker.decode('utf-8').replace('__BUNDLE_SHA256__', digest).encode('utf-8')
+    return render_storage_installer(installer, worker, manifest, commit)
+
+
 def main(script, name):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
@@ -169,6 +182,24 @@ def main(script, name):
         if decisions.get('localGuestPlanApproved') is not True or decisions.get('localAddressAllocationConfirmedByOwner') is not True or hashlib.sha256(proposal_bytes).hexdigest() != decisions.get('localGuestPlanSha256'):
             raise RuntimeError('Exact local network allocation approval missing')
         source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
+    if relative == 'scripts/start-smal-guest-image-job.ps1':
+        def exact_guest_bytes(name):
+            data = (ROOT / name).read_bytes()
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Guest image dependency differs from committed source')
+            return data
+        decisions = json.loads(exact_guest_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
+        proposal = exact_guest_bytes('docs/deployment-2026-10-28/local-guest-apply-proposal.md')
+        if (hashlib.sha256(proposal).hexdigest() != decisions.get('localGuestPlanSha256')
+                or any(decisions.get(key) is not True for key in ['localGuestPlanApproved', 'localGuestMediaInstallationAndRebootsApproved', 'hostBoundDpapiGuestSecretsApproved', 'temporaryGuestImageAnswerFileSecretApproved'])):
+            raise RuntimeError('Exact local guest/secret consent missing')
+        inspection = json.loads((OUT / 'private-ssh-guest-input-inspection-complete-20261028.json').read_text())
+        if inspection.get('status') != 'complete' or inspection.get('result', {}).get('state', {}).get('status') != 'inspection-complete':
+            raise RuntimeError('Complete reconciled image inspection receipt required')
+        helpers = {name: exact_guest_bytes('scripts/' + name) for name in [
+            'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1']}
+        source = render_guest_image_installer(source, exact_guest_bytes('scripts/smal-guest-image-worker.ps1'),
+                                              exact_guest_bytes('docs/deployment-2026-10-28/local-guest-image-manifest.json'), helpers, head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')

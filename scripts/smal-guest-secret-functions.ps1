@@ -21,6 +21,7 @@ function New-LabGuestSecretText {
 
 function Write-LabGuestSecret {
     param([string]$SecretDirectory, [string]$Role, [string]$Value)
+    Add-Type -AssemblyName System.Security
     if ($Role -notmatch '^[a-z][a-z0-9-]{1,39}$' -or $Value.Length -lt 40) { throw 'Invalid guest secret role or value length' }
     # Caller creates and validates the owned Administrator/SYSTEM-only directory.
     $path = Join-Path $SecretDirectory ($Role + '.dpapi')
@@ -39,6 +40,7 @@ function Write-LabGuestSecret {
 
 function Read-LabGuestSecureSecret {
     param([string]$SecretDirectory, [string]$Role)
+    Add-Type -AssemblyName System.Security
     if ($Role -notmatch '^[a-z][a-z0-9-]{1,39}$') { throw 'Invalid guest secret role' }
     [byte[]]$encrypted = [IO.File]::ReadAllBytes((Join-Path $SecretDirectory ($Role + '.dpapi')))
     [byte[]]$clear = $null

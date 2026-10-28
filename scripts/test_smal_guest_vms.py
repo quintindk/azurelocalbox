@@ -43,6 +43,25 @@ class GuestVmTests(unittest.TestCase):
         self.assertIn('Count', item['parameters'])
         self.assertNotIn('Password', item['parameters'])
 
+    def test_helpers_use_parameters_present_on_the_actual_host(self):
+        receipt = ROOT / 'docs/deployment-2026-10-27/private-ssh-guest-cmdlet-inventory-reconciled-20261028.json'
+        inventory = json.loads(receipt.read_text())
+        self.assertEqual(inventory['status'], 'complete')
+        commands = {item['name'].lower(): {name.lower() for name in item['parameters']}
+                    for item in inventory['result']['commands'] if item['available']}
+        for name in ['smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1']:
+            path = ROOT / 'scripts' / name
+            code = "$t=$null;$e=$null;$a=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);@($a.FindAll({param($n)$n -is [System.Management.Automation.Language.CommandAst]},$true)|ForEach-Object {@{name=$_.GetCommandName();parameters=@($_.CommandElements|Where-Object {$_ -is [System.Management.Automation.Language.CommandParameterAst]}|ForEach-Object ParameterName)}})|ConvertTo-Json -Depth 4 -Compress"
+            result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+            checked = 0
+            for invocation in json.loads(result.stdout):
+                command = (invocation['name'] or '').lower()
+                if command not in commands:
+                    continue
+                checked += 1
+                self.assertTrue({item.lower() for item in invocation['parameters']} <= commands[command], invocation)
+            self.assertGreater(checked, 10)
+
 
 if __name__ == '__main__':
     unittest.main()

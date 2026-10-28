@@ -39,6 +39,17 @@ class GuestImageTests(unittest.TestCase):
         self.assertLess(guard, write)
         self.assertIn('cleanupAndRotationRequired = $true', source)
 
+    def test_returned_boot_system_nonblank_or_wrong_size_disk_is_never_formatted(self):
+        variants = [('$true', '$false', 'RAW', '80GB', 9),
+                    ('$false', '$true', 'RAW', '80GB', 9),
+                    ('$false', '$false', 'GPT', '80GB', 9),
+                    ('$false', '$false', 'RAW', '128GB', 9),
+                    ('$false', '$false', 'RAW', '80GB', 0)]
+        for boot, system, style, size, number in variants:
+            code = "$ErrorActionPreference='Stop';. '" + str(LIBRARY) + "';$script:mutated=$false;$script:dismounted=$false;function Test-Path {param($LiteralPath)return $false};function Get-Volume {param($DriveLetter)};function Get-PSDrive {param($Name)};function New-VHD {param($Path,$SizeBytes,[switch]$Dynamic)[pscustomobject]@{VhdFormat='VHDX';VhdType='Dynamic';Path=$Path;Size=$SizeBytes}};function Mount-VHD {param($Path,[switch]$NoDriveLetter,[switch]$Passthru)[pscustomobject]@{Path=$Path}};function Get-Disk {process{[pscustomobject]@{IsBoot=" + boot + ';IsSystem=' + system + ";PartitionStyle='" + style + "';Size=" + size + ';Number=' + str(number) + "}}};function Initialize-Disk {$script:mutated=$true;throw 'UNEXPECTED_MUTATION'};function Format-Volume {$script:mutated=$true;throw 'UNEXPECTED_MUTATION'};function Dismount-VHD {param($Path)$script:dismounted=$true};$xml='<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><!-- AzureLocalBox local-guests-20261028-01 --><ComputerName>LB-DC01</ComputerName></unattend>';try{New-LabGuestOsImage -VmName 'LB-DC01' -OsDiskPath 'V:\\AzureLocalBox\\Guests\\local-guests-20261028-01\\LB-DC01\\OS.vhdx' -ImagePath 'D:\\sources\\install.wim' -ImageIndex 1 -UnattendXml $xml -Checkpoint {param($phase)}}catch{if($_.Exception.Message -notlike '*exact new blank non-boot disk*' -or $script:mutated -or -not $script:dismounted){exit 2};exit 0};exit 3"
+            result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 10:14 SAST
+## Latest verified result, 10:31 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -43,6 +43,21 @@
   `LocalBox-GuestInputs-20261028-02` now records phases independently of SSH.
   At 10:14 SAST it was still checking the Azure Local ISO hash. Do not equate this
   running phase with image inspection success or rerun it without reconciliation.
+- The read-only hash phase was subsequently restarted under its exact guarded
+  recovery, retaining the original worker/state/marker. One-MiB sequential reads
+  replace the observed small-read pattern. Both ISO checks completed successfully.
+  Inspection finished **10:29:16 SAST**, task result `0`, independently read at
+  **10:31:50 SAST**, no remaining worker process. Both ISO mounts were released.
+- Azure Local WIM index `1`: `ServerAzureStackHCICor`, Server Core, x64, actual
+  **10.0.26100.33650**. Evaluation WIM index `1`: `ServerStandardEval`, Server Core,
+  x64, actual **10.0.26100.32230**. Both setup executables and EFI bootloaders have
+  **Valid Microsoft signatures**. The Evaluation full-file hash remains measured,
+  not a publisher-provided checksum.
+- Installed Hyper-V, DISM, HgsClient and PowerShell Direct cmdlet availability and
+  helper parameter names were inspected on the actual host. Offline tests cover
+  exact bundle rendering, source pins, consent hash, metadata selection, new-VHD
+  identity guards, synthetic secret/XML handling and no import-time side effects.
+  These are not a completed guest boot or domain integration test.
 
 Current receipts:
 
@@ -53,6 +68,8 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-eval-media-job-final-observation-20261028.json`
 - `../deployment-2026-10-27/private-ssh-local-network-apply-20261028.json`
 - `../deployment-2026-10-27/private-ssh-local-network-readback-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-input-inspection-complete-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-cmdlet-inventory-reconciled-20261028.json`
 
 ## Verified starting state and recovery
 
@@ -183,3 +200,28 @@ one NAT selector, domain DNS and temporary-secret/DPAPI boundary. Its original
 proposed wording is retained byte-for-byte to preserve the consent hash. The
 local network is now applied. Guest/domain orchestration is still unfinished.
 Future AKS/pod/service networks remain unused.
+
+## Bounded image and VM phase
+
+`start-smal-guest-image-job.ps1` packages a three-library bundle from exact pushed
+source. It refuses an existing attempt and requires recorded guest/secret consent
+and the completed media inspection. `smal-guest-image-worker.ps1` checks live
+identity, network, volume health/free-space budget and source integrity before
+creating anything. It creates a new protected guest root on V: and per-role
+host-bound DPAPI secrets, applies only the selected WIM indices to **newly created
+VHDX files**, and formats only disks returned by its own VHD attachment. BCDBoot's
+explicit `/s` targets only each new virtual EFI partition.
+
+The worker checks the media hashes again with buffered reads, uses read-only ISO
+mounts, preserves partial state/objects on failure, and creates the selected three
+Gen2/Secure Boot/vTPM VMs with automatic starts/checkpoints disabled. The two nodes
+get their four 170 GiB data VHDXs. This bounded phase deliberately leaves all three
+guests **OFF**. Guest boot, PowerShell Direct configuration, AD/DNS, answer-file
+cleanup/rotation and registration gates remain distinct. Do not claim a ready
+domain or Azure Local cluster from image/VM creation.
+
+```bash
+python3 -B scripts/smal-private-powershell.py \
+  --script scripts/read-smal-guest-image-job.ps1 \
+  --receipt your-new-guest-image-observation
+```
