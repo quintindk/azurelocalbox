@@ -24,6 +24,20 @@ Existing node-specific encrypted roles are retained as inactive history after
 convergence, not overwritten with a common value. Any partial failure is inspected,
 never resolved by replaying the whole preparation or deleting AD objects.
 
+At **13:42:31 SAST**, approved local cluster preparation succeeded: new protected
+parent/cluster OUs, `lboxdeploy` with exactly the three scoped AD ACEs, normal
+account expiry, no domain password-policy change and no enforced-GPO bypass.
+Both nodes accepted the fresh cluster-only admin secret and verified new logins.
+The public per-node credential binding was committed only after each verification,
+so subsequent observers do not try obsolete node-specific credentials.
+
+The first one-RG cloud preview wrapper failed JSON decoding before a preview hash
+or apply request was recorded. Independent reads confirmed the RG absent and the
+stable deployment name absent. The CLI's what-if path needs `--no-pretty-print` for
+machine JSON. A separate guarded reconciliation receipt keeps the same Azure
+deployment identity, retains the original failed receipt and rechecks absence
+before any create. No broad retry or RG overwrite is permitted.
+
 Fresh guest inspection at **13:06 SAST** verified both installed HCI OS builds
 `26100.33650`, standalone nodes, zero S2D pools and exactly four RAW 170 GiB data
 disks per node. The supported built-in `AzureEdgeBootstrap` module is version

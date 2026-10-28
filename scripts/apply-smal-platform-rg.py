@@ -1,5 +1,6 @@
 """Create exactly the approved new platform RG after inspected one-resource what-if."""
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -50,11 +51,21 @@ def approval_source():
     return head
 
 
-def main():
+def main(resume_preview=False):
     head = approval_source()
-    target = OUT / 'platform-rg-apply-receipt.json'
+    target = OUT / ('platform-rg-apply-after-preview-reconciliation.json' if resume_preview else 'platform-rg-apply-receipt.json')
+    if resume_preview:
+        prior_path = OUT / 'platform-rg-apply-receipt.json'
+        prior = json.loads(prior_path.read_text())
+        if (prior.get('status') != 'failed-inspect-before-resume' or prior.get('errorType') != 'JSONDecodeError'
+                or prior.get('deploymentName') != ACTION or 'previewSha256' in prior or 'deploymentId' in prior):
+            raise RuntimeError('Exact pre-apply preview rendering failure not proven')
     with target.open('x') as stream:
         record = {'beganAtUtc': datetime.now(timezone.utc).isoformat(), 'status': 'pending', 'sourceCommit': head, 'deploymentName': ACTION, 'scope': 'one-new-owned-platform-rg-only', 'resourceGroupId': ID}
+        if resume_preview:
+            record['originalReceiptRetained'] = True
+            record['originalReceiptSha256'] = hashlib.sha256(prior_path.read_bytes()).hexdigest()
+            record['resumeScope'] = 'reconciled-pre-apply-preview-rendering-only'
         stream.write(json.dumps(record, indent=2) + '\n')
     try:
         account = az(['account', 'show', '--subscription', SUB, '--query', '{id:id,tenantId:tenantId,state:state}'])
@@ -63,8 +74,8 @@ def main():
         if az(['group', 'exists', '--subscription', SUB, '--name', RG]) is not False: raise RuntimeError('RG already exists, preserve rather than overwrite')
         prior = az(['deployment', 'sub', 'list', '--subscription', SUB, '--query', "[?name=='" + ACTION + "'].name"])
         if prior: raise RuntimeError('Deployment identity already exists, reconcile before retry')
-        preview = az(['deployment', 'sub', 'what-if', '--subscription', SUB, '--name', ACTION, '--location', 'westeurope', '--template-file', str(ROOT / TEMPLATE), '--result-format', 'FullResourcePayloads'], timeout=240)
-        preview_path = OUT / 'platform-rg-what-if.json'
+        preview = az(['deployment', 'sub', 'what-if', '--subscription', SUB, '--name', ACTION, '--location', 'westeurope', '--template-file', str(ROOT / TEMPLATE), '--result-format', 'FullResourcePayloads', '--no-pretty-print'], timeout=240)
+        preview_path = OUT / ('platform-rg-what-if-reconciled.json' if resume_preview else 'platform-rg-what-if.json')
         with preview_path.open('x') as stream: stream.write(json.dumps(preview, indent=2) + '\n')
         validate_preview(preview)
         record['previewSha256'] = hashlib.sha256(preview_path.read_bytes()).hexdigest()
@@ -89,4 +100,7 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--resume-after-preview-rendering', action='store_true')
+    args = parser.parse_args()
+    raise SystemExit(main(args.resume_after_preview_rendering))

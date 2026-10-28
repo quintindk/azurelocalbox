@@ -54,6 +54,16 @@ class ClusterPrerequisiteTests(unittest.TestCase):
         self.assertEqual(resource['location'], 'westeurope')
         self.assertNotIn('CostControl', resource['tags'])
 
+    def test_rg_rendering_reconciliation_keeps_old_receipt_and_requires_absence(self):
+        source = (ROOT / 'scripts/apply-smal-platform-rg.py').read_text()
+        self.assertIn('--no-pretty-print', source)
+        self.assertIn("'previewSha256' in prior", source)
+        self.assertIn("'deploymentId' in prior", source)
+        self.assertIn("record['originalReceiptRetained'] = True", source)
+        self.assertIn('RG already exists, preserve rather than overwrite', source)
+        self.assertIn('Deployment identity already exists, reconcile before retry', source)
+        self.assertNotIn("'delete'", source)
+
 
 if __name__ == '__main__':
     unittest.main()
