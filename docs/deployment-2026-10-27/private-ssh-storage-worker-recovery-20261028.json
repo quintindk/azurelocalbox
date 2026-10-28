@@ -1,6 +1,16 @@
 {
   "beganAtSast": "2026-10-28T09:27:57.745307+02:00",
   "status": "uncertain-command-timeout-do-not-repeat",
+  "laterReconciliation": {
+    "originalOutcomeRetained": true,
+    "exactHistoricalLoaderVerified": "../deployment-2026-10-28/storage-recovery-loader-proof.json",
+    "ownedTransportCleanup": "private-ssh-recovery-transport-cleanup-20261028.json",
+    "freshNoEffectsReceipt": "private-ssh-storage-recovery-reconciliation-after-cleanup-20261028.json",
+    "historicalTransportProcessesAbsentAfterCleanup": true,
+    "recoveryProofOrBackupCreatedByOriginalAttempt": false,
+    "storagePoolVirtualDiskOrVolumeCreatedByOriginalAttempt": false,
+    "originalMarkersRetained": true
+  },
   "commit": "627bed81f8a052d4b31ca0858f64c19f2ccb2355",
   "script": "scripts/recover-smal-storage-job.ps1",
   "transport": "VPN-private-Premium-Bastion-loopback-SSH22",

@@ -101,7 +101,7 @@ def main(script, name):
         if decisions.get('simpleStorageFormattingApproved') is not True:
             raise RuntimeError('Explicit Simple storage approval missing')
         if relative == 'scripts/recover-smal-storage-job.ps1':
-            checked = json.loads((OUT / 'private-ssh-storage-recovery-reconciliation-20261028.json').read_text())
+            checked = json.loads((OUT / 'private-ssh-storage-recovery-reconciliation-after-cleanup-20261028.json').read_text())
             evidence = checked.get('result', {})
             diagnostic = evidence.get('diagnostic', {})
             if (checked.get('status') != 'complete' or evidence.get('taskState') != 'Ready'
