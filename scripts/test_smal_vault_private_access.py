@@ -10,6 +10,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VaultPrivateAccessTests(unittest.TestCase):
+    def test_probe_template_writes_only_a_noncredential_secret_child(self):
+        result = subprocess.run(['az', 'bicep', 'build', '--file', str(ROOT / 'infra/bicep/localbox-private-vault-probe.bicep'), '--stdout', '--only-show-errors'], check=True, capture_output=True, text=True, timeout=90)
+        data = json.loads(result.stdout)
+        self.assertEqual(len(data['resources']), 1)
+        self.assertEqual(data['resources'][0]['type'], 'Microsoft.KeyVault/vaults/secrets')
+        self.assertEqual(data['parameters']['probeValue']['type'], 'securestring')
+        self.assertNotIn('publicNetworkAccess', result.stdout)
+        source = (ROOT / 'scripts/verify-smal-private-vault-flow.py').read_text()
+        self.assertIn('NON-CREDENTIAL-PRIVATE-FLOW-PROBE:', source)
+        self.assertIn('Probe gained another version; preserve instead of deleting it', source)
+        self.assertNotIn("'purge'", source)
+        self.assertNotIn('Read-LabGuestSecureSecret', source)
+
+    def test_probe_preview_refuses_vault_changes_and_other_secrets(self):
+        h = runpy.run_path(str(ROOT / 'scripts/verify-smal-private-vault-flow.py'), run_name='probe_preview_test')
+        good = {'status': 'Succeeded', 'changes': [{'resourceId': h['VAULT'] + '/secrets/' + h['PROBE'], 'changeType': 'Create'}]}
+        h['validate_preview'](good)
+        bad = copy.deepcopy(good); bad['changes'][0]['resourceId'] = h['VAULT']
+        with self.assertRaises(RuntimeError): h['validate_preview'](bad)
+        bad = copy.deepcopy(good); bad['changes'][0]['changeType'] = 'Modify'
+        with self.assertRaises(RuntimeError): h['validate_preview'](bad)
+
     def test_role_template_cannot_change_public_access_or_grant_owner(self):
         result = subprocess.run(['az', 'bicep', 'build', '--file', str(ROOT / 'infra/bicep/localbox-vault-deployer-role.bicep'), '--stdout', '--only-show-errors'], check=True, capture_output=True, text=True, timeout=90)
         data = json.loads(result.stdout)
