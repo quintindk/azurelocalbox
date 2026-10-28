@@ -17,6 +17,15 @@ cloud plan/remaining approvals are still pending. Current compute charges contin
 The following bullets retain the recovery chain rather than rewriting failed
 attempts as successful history.
 
+Cloud prerequisite readback at **12:14 SAST** rechecked the same approved principal
+and tenant/subscription and confirmed all 13 provider namespaces named by the
+retained permission guide are already **Registered**. No registration was applied.
+The first observation's `Microsoft.Insights: not-returned` was a namespace-display
+case bug (`microsoft.insights`), not proof of non-registration. The corrected receipt
+is `cloud-prerequisite-observation-reconciled-20261028.json`; the first receipt is
+retained. Eight inherited policy identities were refreshed. Actual policy effects,
+effective required data-plane roles and cloud admission remain unverified.
+
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
   The worker verified the C: boot identity and partition unchanged.
