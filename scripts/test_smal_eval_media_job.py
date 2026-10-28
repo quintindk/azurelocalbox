@@ -15,7 +15,7 @@ WORKER = (ROOT / 'scripts/smal-eval-media-worker.ps1').read_text()
 
 class EvaluationMediaTests(unittest.TestCase):
     def test_powershell_scripts_parse(self):
-        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1', 'read-smal-guest-inspection.ps1']:
+        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1', 'read-smal-guest-inspection.ps1', 'stop-smal-guest-inspection.ps1', 'start-smal-guest-input-job.ps1', 'smal-guest-input-worker.ps1', 'read-smal-guest-input-job.ps1']:
             path = ROOT / 'scripts' / name
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e | ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
@@ -78,6 +78,39 @@ class EvaluationMediaTests(unittest.TestCase):
         for marker in [b'__MANIFEST_', b'__WORKER_', b'__SOURCE_COMMIT__']:
             self.assertNotIn(marker, source)
         self.assertIn(b'b' * 40, source)
+
+    def test_guest_inspection_is_durable_read_only_and_bounds_hns(self):
+        worker = (ROOT / 'scripts/smal-guest-input-worker.ps1').read_text()
+        self.assertIn("Save-Inspection 'hyperv-query'", worker)
+        self.assertIn("Save-Inspection 'nat-query'", worker)
+        self.assertIn("Save-Inspection 'bounded-hns-query'", worker)
+        self.assertIn('$child.WaitForExit(20000)', worker)
+        self.assertIn('$child.Kill()', worker)
+        self.assertIn('-Access ReadOnly', worker)
+        self.assertIn('finally {', worker)
+        for forbidden in ['New-VM', 'New-NetNat', 'New-VMSwitch', 'Format-Volume', 'Remove-Item', 'Start-Service']:
+            self.assertNotIn(forbidden, worker)
+        cleanup = (ROOT / 'scripts/stop-smal-guest-inspection.ps1').read_text()
+        self.assertIn("Name='powershell.exe' AND CommandLine LIKE", cleanup)
+        self.assertIn('$row.CreationDate', cleanup)
+        self.assertNotIn('Dismount-DiskImage', cleanup)
+
+    def test_guest_inspection_installer_renders_all_dependencies(self):
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='input_render_test')
+        source = helpers['render_storage_installer'](
+            (ROOT / 'scripts/start-smal-guest-input-job.ps1').read_bytes(),
+            (ROOT / 'scripts/smal-guest-input-worker.ps1').read_bytes(),
+            (ROOT / 'docs/deployment-2026-10-28/guest-input-job-manifest.json').read_bytes(), 'c' * 40)
+        self.assertNotIn(b'__MANIFEST_', source)
+        self.assertNotIn(b'__WORKER_', source)
+        self.assertNotIn(b'__SOURCE_COMMIT__', source)
+
+    def test_guest_consent_is_bound_to_exact_proposal(self):
+        decisions = json.loads((ROOT / 'docs/deployment-2026-10-28/deployment-decisions.json').read_text())
+        proposal = (ROOT / 'docs/deployment-2026-10-28/local-guest-apply-proposal.md').read_bytes()
+        self.assertEqual(hashlib.sha256(proposal).hexdigest(), decisions['localGuestPlanSha256'])
+        self.assertTrue(decisions['localGuestPlanApproved'])
+        self.assertTrue(decisions['hostBoundDpapiGuestSecretsApproved'])
 
 
 if __name__ == '__main__':

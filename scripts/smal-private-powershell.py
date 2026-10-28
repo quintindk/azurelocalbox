@@ -134,13 +134,29 @@ def main(script, name):
             raise RuntimeError('Explicit Evaluation media and terms approval missing')
         source = render_storage_installer(source, exact_media_bytes('scripts/smal-eval-media-worker.ps1'),
                                           exact_media_bytes('docs/deployment-2026-10-28/eval-media-job-manifest.json'), head)
-    if relative == 'scripts/read-smal-guest-inspection.ps1':
+    if relative in ['scripts/read-smal-guest-inspection.ps1', 'scripts/stop-smal-guest-inspection.ps1']:
         prior = json.loads((OUT / 'private-ssh-guest-input-inspection-20261028.json').read_text())
         old_source = subprocess.check_output(['git', 'show', prior['commit'] + ':scripts/inspect-smal-guest-inputs.ps1'], cwd=ROOT)
         if hashlib.sha256(old_source).hexdigest() != prior['renderedSourceSha256']:
             raise RuntimeError('Exact historical inspection differs from receipt')
         selector = base64.b64encode(old_source.decode('utf-8').encode('utf-16-le')).decode('ascii')
         source = source.decode('utf-8').replace('__GUEST_INSPECTION_ENCODED__', selector).encode('utf-8')
+    if relative == 'scripts/start-smal-guest-input-job.ps1':
+        def exact_input_bytes(name):
+            data = (ROOT / name).read_bytes()
+            if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
+                raise RuntimeError('Guest inspection dependency differs from committed source')
+            return data
+        decisions = json.loads(exact_input_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
+        proposal = exact_input_bytes('docs/deployment-2026-10-28/local-guest-apply-proposal.md')
+        if decisions.get('localGuestPlanApproved') is not True or hashlib.sha256(proposal).hexdigest() != decisions.get('localGuestPlanSha256'):
+            raise RuntimeError('Exact guest plan approval missing')
+        reconciliation = json.loads((OUT / 'private-ssh-guest-inspection-cleanup-readback-20261028.json').read_text())
+        observed = reconciliation.get('result', {})
+        if reconciliation.get('status') != 'complete' or observed.get('exactInspectionProcesses') != [] or any(item['attached'] for item in observed.get('media', [])) or len(observed.get('media', [])) != 2:
+            raise RuntimeError('Prior inspection/process attachments not reconciled')
+        source = render_storage_installer(source, exact_input_bytes('scripts/smal-guest-input-worker.ps1'),
+                                          exact_input_bytes('docs/deployment-2026-10-28/guest-input-job-manifest.json'), head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
