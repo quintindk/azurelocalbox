@@ -41,7 +41,14 @@ def stdin_loader(source):
     # One fixed short command reads the full reviewed UTF-8 source, checks it,
     # then invokes it as one script. Do not feed a sequence of unguarded stdin
     # statements to PowerShell or place a large payload on the Windows argv.
-    loader = "$ErrorActionPreference='Stop';[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);$s=[Console]::In.ReadToEnd();$h=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s));if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected + "'){throw 'Reviewed script hash differs'};& ([ScriptBlock]::Create($s))"
+    loader = "$ErrorActionPreference='Stop';try{[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);$s=[Console]::In.ReadToEnd();$h=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s));if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected + "'){throw 'Reviewed script hash differs'};& ([ScriptBlock]::Create($s));exit 0}catch{[Console]::Error.WriteLine('ReviewedSourceFailure:'+ $_.Exception.GetType().Name + ':' + $_.InvocationInfo.ScriptLineNumber);exit 1}"
+    return base64.b64encode(loader.encode('utf-16-le')).decode('ascii')
+
+
+def legacy_loader_for_hash(expected):
+    if not re.fullmatch(r'[a-fA-F0-9]{64}', expected):
+        raise RuntimeError('Invalid historical source digest')
+    loader = "$ErrorActionPreference='Stop';[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);$s=[Console]::In.ReadToEnd();$h=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s));if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected.upper() + "'){throw 'Reviewed script hash differs'};& ([ScriptBlock]::Create($s))"
     return base64.b64encode(loader.encode('utf-16-le')).decode('ascii')
 
 
@@ -90,7 +97,7 @@ def main(script, name):
         if decisions.get('simpleStorageFormattingApproved') is not True:
             raise RuntimeError('Explicit Simple storage approval missing')
         if relative == 'scripts/recover-smal-storage-job.ps1':
-            checked = json.loads((OUT / 'private-ssh-storage-worker-diagnostic-20261028.json').read_text())
+            checked = json.loads((OUT / 'private-ssh-storage-recovery-reconciliation-20261028.json').read_text())
             evidence = checked.get('result', {})
             diagnostic = evidence.get('diagnostic', {})
             if (checked.get('status') != 'complete' or evidence.get('taskState') != 'Ready'
@@ -98,10 +105,20 @@ def main(script, name):
                     or diagnostic.get('poolExists') is not False or diagnostic.get('virtualDiskExists') is not False
                     or diagnostic.get('temporaryProcessExists') is not False
                     or diagnostic.get('temporaryStatePhase') != 'initialising'
-                    or diagnostic.get('rawDataDiskCount') != 8 or diagnostic.get('poolablePhysicalDiskCount') != 8):
+                    or diagnostic.get('rawDataDiskCount') != 8 or diagnostic.get('poolablePhysicalDiskCount') != 8
+                    or diagnostic.get('recoveryProofExists') is not False
+                    or diagnostic.get('recoveryWorkerBackupExists') is not False
+                    or diagnostic.get('matchingHistoricalRecoveryProcesses') != []):
                 raise RuntimeError('Exact preflight/no-storage-effects recovery not reconciled')
         manifest = exact_bytes('docs/deployment-2026-10-28/storage-job-manifest.json')
         source = render_storage_installer(source, exact_bytes('scripts/smal-storage-worker.ps1'), manifest, head)
+    if relative == 'scripts/read-smal-storage-job.ps1':
+        pending = OUT / 'private-ssh-storage-worker-recovery-20261028.json'
+        encoded_legacy = ''
+        if pending.exists():
+            prior = json.loads(pending.read_text())
+            encoded_legacy = legacy_loader_for_hash(prior['renderedSourceSha256'])
+        source = source.decode('utf-8').replace('__PENDING_RECOVERY_LOADER__', encoded_legacy).encode('utf-8')
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
@@ -158,6 +175,9 @@ def main(script, name):
         result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded, stream_source), **io, capture_output=True, text=True, encoding='utf-8', timeout=guest_timeout)
         record['sshExitCode'] = result.returncode
         record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
+        safe_error = re.search(r'ReviewedSourceFailure:([A-Za-z0-9._]+):([0-9]+)', result.stderr)
+        if safe_error:
+            record['reviewedSourceError'] = {'type': safe_error[1], 'line': int(safe_error[2])}
         if result.returncode:
             labels = ['Host key verification failed', 'Permission denied', 'Connection timed out', 'Connection reset', 'Connection closed']
             record['errorLabel'] = next((label for label in labels if label in result.stderr), 'command-failed-raw-output-suppressed')

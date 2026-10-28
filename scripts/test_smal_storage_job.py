@@ -11,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StorageJobTests(unittest.TestCase):
+    def test_historical_loader_selector_is_hash_only_and_validated(self):
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='legacy_selector_test')
+        encoded = helpers['legacy_loader_for_hash']('a' * 64)
+        text = base64.b64decode(encoded).decode('utf-16-le')
+        self.assertIn('A' * 64, text)
+        self.assertNotIn('private', text.lower())
+        with self.assertRaises(RuntimeError): helpers['legacy_loader_for_hash']("bad' OR 1=1")
+
     def test_powershell_checkpoint_replacement_keeps_previous_state(self):
         source = (ROOT / 'scripts/smal-storage-worker.ps1').read_text()
         function = re.search(r'function Save-State \{\n.*?\n\}', source, re.S).group(0)
@@ -31,6 +39,11 @@ class StorageJobTests(unittest.TestCase):
         changed = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode() + '#changed', encoding='utf-8', capture_output=True, timeout=30)
         self.assertNotEqual(changed.returncode, 0)
         self.assertNotIn('-n', helpers['ssh_args'](12345, 'arcdemo', loader, stream_source=True))
+        failing = b"throw 'synthetic-sensitive-value-must-not-be-logged'\n"
+        failed = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', helpers['stdin_loader'](failing)], input=failing.decode(), encoding='utf-8', capture_output=True, timeout=30)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('ReviewedSourceFailure:', failed.stderr)
+        self.assertNotIn('synthetic-sensitive-value-must-not-be-logged', failed.stderr)
 
     def test_real_installer_payload_is_rendered_and_requires_streaming(self):
         helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='render_test')
@@ -80,6 +93,7 @@ class StorageJobTests(unittest.TestCase):
         self.assertIn('[IO.FileMode]::CreateNew', recovery)
         for forbidden in ['Remove-Item', 'Format-Volume', 'Initialize-Disk', 'New-StoragePool', 'Stop-Process']:
             self.assertNotIn(forbidden, recovery)
+        self.assertIn('@($task.Triggers | Where-Object { $null -ne $_ }).Count', recovery)
 
     def test_scope_and_manifest_are_explicit_and_never_cloud_or_nested_apply(self):
         manifest = json.loads((ROOT / 'docs/deployment-2026-10-28/storage-job-manifest.json').read_text())

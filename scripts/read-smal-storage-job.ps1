@@ -19,6 +19,19 @@ $diagnostic.temporaryProcessId = $pending.processId
 $diagnostic.temporaryProcessExists = $(if ($pending.processId) { [bool](Get-Process -Id $pending.processId -ErrorAction SilentlyContinue) } else { $false })
 $diagnostic.workerSha256 = (Get-FileHash (Join-Path $root 'worker.ps1')).Hash
 $diagnostic.manifestSha256 = (Get-FileHash (Join-Path $root 'manifest.json')).Hash
+$diagnostic.recoveryProofExists = Test-Path (Join-Path $root 'recovery-authorised.json')
+$diagnostic.recoveryWorkerBackupExists = Test-Path (Join-Path $root 'worker.before-recovery.ps1')
+$diagnostic.triggerCountIncludingNull = @($task.Triggers).Count
+$diagnostic.actualTriggerCount = @($task.Triggers | Where-Object { $null -ne $_ }).Count
+$diagnostic.taskPrincipal = $task.Principal.UserId
+$diagnostic.actionIsExpected = $task.Actions.Count -eq 1 -and $task.Actions[0].Execute -ieq 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -and $task.Actions[0].Arguments -ceq ('-NoLogo -NoProfile -NonInteractive -File "' + (Join-Path $root 'worker.ps1') + '"')
+$pendingLoader = '__PENDING_RECOVERY_LOADER__'
+$diagnostic.matchingHistoricalRecoveryProcesses = @()
+if ($pendingLoader -and $pendingLoader -notlike '__*') {
+    # Match only our exact public hash-only loader. Never return command lines,
+    # inspect unrelated process arguments, or stop any process.
+    $diagnostic.matchingHistoricalRecoveryProcesses = @(Get-CimInstance Win32_Process -Filter ("Name='powershell.exe' AND CommandLine LIKE '%" + $pendingLoader + "%'") | Select-Object ProcessId, ParentProcessId)
+}
 try {
     $request = [Net.HttpWebRequest]::Create('http://169.254.169.254/metadata/instance/compute/resourceId?api-version=2021-02-01&format=text')
     $request.Proxy = $null; $request.Headers['Metadata'] = 'true'; $request.Timeout = 5000
