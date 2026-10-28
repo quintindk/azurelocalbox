@@ -37,11 +37,15 @@ def ssh_args(port, admin, encoded, stream_source=False):
 
 
 def stdin_loader(source):
+    if len(source) > 2 * 1024**2:
+        raise RuntimeError('Reviewed script exceeds the source transport byte cap')
     expected = hashlib.sha256(source).hexdigest().upper()
     # One fixed short command reads the full reviewed UTF-8 source, checks it,
     # then invokes it as one script. Do not feed a sequence of unguarded stdin
     # statements to PowerShell or place a large payload on the Windows argv.
-    loader = "$ErrorActionPreference='Stop';try{[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);$s=[Console]::In.ReadToEnd();$h=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s));if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected + "'){throw 'Reviewed script hash differs'};& ([ScriptBlock]::Create($s));exit 0}catch{[Console]::Error.WriteLine('ReviewedSourceFailure:'+ $_.Exception.GetType().Name + ':' + $_.InvocationInfo.ScriptLineNumber);exit 1}"
+    # Windows OpenSSH can leave inherited stdin open after client EOF. Read the
+    # exact pinned byte length instead of waiting for ReadToEnd().
+    loader = "$ErrorActionPreference='Stop';try{$n=" + str(len(source)) + ";[byte[]]$b=New-Object byte[] $n;$i=[Console]::OpenStandardInput();$o=0;while($o -lt $n){$c=$i.Read($b,$o,$n-$o);if($c -le 0){throw 'Truncated reviewed source'};$o+=$c};$h=[Security.Cryptography.SHA256]::Create().ComputeHash($b);if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected + "'){throw 'Reviewed script hash differs'};$s=[Text.UTF8Encoding]::new($false,$true).GetString($b);& ([ScriptBlock]::Create($s));exit 0}catch{[Console]::Error.WriteLine('ReviewedSourceFailure:'+ $_.Exception.GetType().Name + ':' + $_.InvocationInfo.ScriptLineNumber);exit 1}"
     return base64.b64encode(loader.encode('utf-16-le')).decode('ascii')
 
 
@@ -112,7 +116,7 @@ def main(script, name):
                 raise RuntimeError('Exact preflight/no-storage-effects recovery not reconciled')
         manifest = exact_bytes('docs/deployment-2026-10-28/storage-job-manifest.json')
         source = render_storage_installer(source, exact_bytes('scripts/smal-storage-worker.ps1'), manifest, head)
-    if relative == 'scripts/read-smal-storage-job.ps1':
+    if relative in ['scripts/read-smal-storage-job.ps1', 'scripts/stop-smal-recovery-transport.ps1']:
         pending = OUT / 'private-ssh-storage-worker-recovery-20261028.json'
         encoded_legacy = ''
         if pending.exists():
@@ -145,8 +149,9 @@ def main(script, name):
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
-    record['scriptTransport'] = 'sha256-verified-utf8-stdin' if stream_source else 'encoded-command'
+    record['scriptTransport'] = 'sha256-length-framed-utf8-stdin' if stream_source else 'encoded-command'
     record['renderedSourceSha256'] = hashlib.sha256(source).hexdigest()
+    record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)

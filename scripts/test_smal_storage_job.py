@@ -36,7 +36,7 @@ class StorageJobTests(unittest.TestCase):
         result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode(), encoding='utf-8', capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)['ok'])
-        changed = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode() + '#changed', encoding='utf-8', capture_output=True, timeout=30)
+        changed = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode().replace('# é', '# è', 1), encoding='utf-8', capture_output=True, timeout=30)
         self.assertNotEqual(changed.returncode, 0)
         self.assertNotIn('-n', helpers['ssh_args'](12345, 'arcdemo', loader, stream_source=True))
         failing = b"throw 'synthetic-sensitive-value-must-not-be-logged'\n"
@@ -44,6 +44,8 @@ class StorageJobTests(unittest.TestCase):
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('ReviewedSourceFailure:', failed.stderr)
         self.assertNotIn('synthetic-sensitive-value-must-not-be-logged', failed.stderr)
+        truncated = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', helpers['stdin_loader'](source)], input=source.decode()[:-10], encoding='utf-8', capture_output=True, timeout=30)
+        self.assertNotEqual(truncated.returncode, 0)
 
     def test_real_installer_payload_is_rendered_and_requires_streaming(self):
         helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='render_test')
@@ -57,7 +59,7 @@ class StorageJobTests(unittest.TestCase):
         self.assertLess(len(helpers['stdin_loader'](source)), 16000)
 
     def test_powershell_scripts_parse(self):
-        for name in ['smal-storage-worker.ps1', 'start-smal-storage-job.ps1', 'read-smal-storage-job.ps1', 'recover-smal-storage-job.ps1', 'inspect-smal-eval-media-access.ps1']:
+        for name in ['smal-storage-worker.ps1', 'start-smal-storage-job.ps1', 'read-smal-storage-job.ps1', 'recover-smal-storage-job.ps1', 'stop-smal-recovery-transport.ps1', 'inspect-smal-eval-media-access.ps1']:
             code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True)
 
