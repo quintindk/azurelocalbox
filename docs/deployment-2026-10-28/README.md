@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 09:56 SAST
+## Latest verified result, 10:14 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -12,8 +12,8 @@
   Host HEAD at 09:51 SAST returned **200**, exact expected **8,152,356,864 bytes**
   and ETag for the approved Evaluation ISO. This proves that specific host request,
   not a download, nested egress or platform readiness.
-- No nested VM, local network, domain, registration, resource bridge, custom
-  location, AKS or workload deployment is established by these receipts.
+- No nested VM, domain, registration, resource bridge, custom location, AKS or
+  workload deployment is established by these receipts.
 - Relay's main task reads `done`, revision `13`, updated `2026-10-28T05:55:03.338Z`.
   Complete comment traversal contains no closure explanation. This conflicts with
   actual readiness. No cause is inferred and no task was reopened or redispatched.
@@ -28,6 +28,21 @@
   intact. Independent Azure readback showed Running/agent Ready and the VPN route
   remained on tun0. A new read-only observation succeeded. The download task was
   neither restarted nor reinstalled.
+- Owner subsequently approved the exact local guest proposal and its explicit
+  DPAPI/temporary-answer-file secret boundary. Consent is bound to the proposal
+  SHA-256 in `deployment-decisions.json`. Do not request the same consent again.
+- Local network apply succeeded at **10:13:53 SAST**, independently read at
+  **10:14:21 SAST**: Internal switch `LB-Fabric`, ID
+  `995f5a7a-d229-4ca0-bb2a-9b34529c6934`, gateway `10.64.0.1/24`, exactly one
+  WinNAT object `LB-NAT`, selector `10.64.0.0/20`. Outer `10.200.16.4`, default
+  gateway `10.200.16.1` and DNS `10.204.0.4` are unchanged. No external switch,
+  Azure network write or NIC-forwarding change. Guest traffic remains untested.
+- Initial synchronous input inspection timed out without attached media or DISM
+  processes. Only its exact two orphan PowerShell processes were stopped after
+  identity/creation-time checks. Separate durable one-shot inspection
+  `LocalBox-GuestInputs-20261028-02` now records phases independently of SSH.
+  At 10:14 SAST it was still checking the Azure Local ISO hash. Do not equate this
+  running phase with image inspection success or rerun it without reconciliation.
 
 Current receipts:
 
@@ -36,6 +51,8 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-eval-media-access-post-wildcard-20261028.json`
 - `../deployment-2026-10-27/private-ssh-eval-media-job-start-20261028.json`
 - `../deployment-2026-10-27/private-ssh-eval-media-job-final-observation-20261028.json`
+- `../deployment-2026-10-27/private-ssh-local-network-apply-20261028.json`
+- `../deployment-2026-10-27/private-ssh-local-network-readback-20261028.json`
 
 ## Verified starting state and recovery
 
@@ -160,7 +177,9 @@ HTML read resolved the exact links without another crawl. No user secrets were s
 The remaining local guest/network/credential implementation and exact registration
 scope/cost/export decisions still need completion before a full deployment claim.
 
-The [local guest apply proposal](local-guest-apply-proposal.md) now defines the
+The [owner-approved local guest proposal](local-guest-apply-proposal.md) defines the
 proposed two-node/DC resource budget, initial single-switch management topology,
-one NAT selector, domain DNS and temporary-secret/DPAPI boundary. It is not approval
-or executable guest/domain code. Future AKS/pod/service networks remain unused.
+one NAT selector, domain DNS and temporary-secret/DPAPI boundary. Its original
+proposed wording is retained byte-for-byte to preserve the consent hash. The
+local network is now applied. Guest/domain orchestration is still unfinished.
+Future AKS/pod/service networks remain unused.
