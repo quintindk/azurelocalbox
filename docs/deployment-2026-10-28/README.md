@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 11:45 SAST
+## Latest verified result, 11:52 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -109,6 +109,17 @@
 - Node 1's recorded UTC timestamp was two hours behind the host. A matched NTP
   response did not establish clock synchronisation, as already flagged in state.
   Reconcile the actual clock/time service before registration or a domain join.
+- At **11:52:35 SAST**, read-only node inspection verified the original bootstrap
+  login still works, no answer XML remains in the inspected setup locations, and
+  the sampled setup logs are readable and contain no old value. No current lock
+  was reproduced, so do not claim a proven historical sharing-violation cause.
+  The node clock now matches host UTC, Windows Time is running and its source is
+  `time.windows.com,0x8`. No manual adjustment was made by the inspection.
+- The prepared cleanup-only continuation preserves the successful DC and node 1
+  state, skips their creation/boot/network/role phases, and only finishes node 1
+  cleanup/rotation before proceeding to node 2. Shared read handles tolerate active
+  setup-log writers. Unreadable/unclean files remain explicit review gates, never a
+  clean-result claim. Both nodes also get a bounded read-only UTC/source check.
 
 | Guest | VM ID | Memory | vCPU | State at 11:45 SAST |
 |---|---|---:|---:|---|
@@ -135,6 +146,7 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-20261028.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-03.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-04.json`
+- `../deployment-2026-10-27/private-ssh-node01-cleanup-failure-inspection-20261028.json`
 
 ## Verified starting state and recovery
 

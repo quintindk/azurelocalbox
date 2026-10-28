@@ -98,7 +98,17 @@ function Complete-LabGuestBootstrapSecret {
         $ErrorActionPreference = 'Stop'
         if ($env:COMPUTERNAME -cne $ExpectedName) { throw 'Guest cleanup identity differs' }
         $pointer = [IntPtr]::Zero
-        $removed = 0; $logsNeedReview = $false
+        $removed = 0; $logsNeedReview = $false; $answersNeedReview = $false; $unreadableLogs = 0; $unreadableAnswers = 0
+        function Read-SharedSetupText {
+            param([string]$Path)
+            $stream = $null; $reader = $null
+            try {
+                $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+                if ($stream.Length -gt 128MB) { throw 'Setup file exceeds inspection cap' }
+                $reader = [IO.StreamReader]::new($stream)
+                return $reader.ReadToEnd()
+            } finally { if ($reader) { $reader.Dispose() } elseif ($stream) { $stream.Dispose() } }
+        }
         try {
             $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($OldValue)
             $oldText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
@@ -111,26 +121,26 @@ function Complete-LabGuestBootstrapSecret {
             if (Test-Path -LiteralPath 'C:\Unattend.xml') { $files += Get-Item -LiteralPath 'C:\Unattend.xml' }
             foreach ($file in $files) {
                 if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Guest answer file is a reparse point' }
-                $text = [IO.File]::ReadAllText($file.FullName)
+                try { $text = Read-SharedSetupText $file.FullName } catch { $answersNeedReview = $true; $unreadableAnswers++; continue }
                 # Delete only files attributable to our own run or bootstrap value.
                 if ($text.Contains('AzureLocalBox local-guests-20261028-01') -or $text.Contains($oldText)) {
-                    Remove-Item -LiteralPath $file.FullName -Force
-                    if (Test-Path -LiteralPath $file.FullName) { throw 'Guest answer-file removal not confirmed' }
-                    $removed++
+                    try { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop } catch { $answersNeedReview = $true }
+                    if (Test-Path -LiteralPath $file.FullName) { $answersNeedReview = $true } else { $removed++ }
                 }
             }
             # Inspect setup logs without deleting or rewriting their history. Even
             # after rotation, a match blocks a clean bootstrap/registration claim.
             foreach ($file in @(Get-ChildItem -LiteralPath 'C:\Windows\Panther' -Filter '*.log' -Recurse -File -ErrorAction SilentlyContinue)) {
                 if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Guest setup log is a reparse point' }
-                if ([IO.File]::ReadAllText($file.FullName).Contains($oldText)) { $logsNeedReview = $true }
+                try { if ((Read-SharedSetupText $file.FullName).Contains($oldText)) { $logsNeedReview = $true } }
+                catch { $logsNeedReview = $true; $unreadableLogs++ }
             }
             if ($ExpectedName -eq 'LB-DC01') {
                 Import-Module ActiveDirectory
                 $domain = Get-ADDomain -Identity 'ad.localbox.test'
                 Set-ADAccountPassword -Identity ($domain.DomainSID.ToString() + '-500') -Reset -NewPassword $NewValue
             } else { Set-LocalUser -Name Administrator -Password $NewValue }
-            return @{ computer = $env:COMPUTERNAME; ownedAnswerFilesRemoved = $removed; credentialRotationRequested = $true; setupLogsNeedReview = $logsNeedReview; secureErasureClaimed = $false }
+            return @{ computer = $env:COMPUTERNAME; ownedAnswerFilesRemoved = $removed; credentialRotationRequested = $true; setupLogsNeedReview = $logsNeedReview; answerFileCleanupNeedsReview = $answersNeedReview; unreadableSetupLogs = $unreadableLogs; unreadableAnswerCandidates = $unreadableAnswers; secureErasureClaimed = $false }
         } finally {
             if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
             $oldText = $null; $text = $null
@@ -167,5 +177,24 @@ function Test-LabGuestConnectivity {
         } catch { } finally { if ($udp) { $udp.Dispose() } }
         $result.transportChecksPassed = $result.domainSrv -and $result.privateDnsNormal -and $result.privateDnsTcp -and $result.publicHeadStatus -eq 200 -and $null -ne $result.privateHeadStatus -and $result.ntpResponse
         return $result
+    }
+}
+
+function Get-LabGuestClockEvidence {
+    param([System.Management.Automation.Runspaces.PSSession]$Session)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $before = [datetime]::UtcNow
+        $guest = Invoke-Command -Session $Session -ErrorAction Stop -ScriptBlock {
+            @{ utcNow = [datetime]::UtcNow.ToString('o'); timeServiceRunning = (Get-Service w32time).Status.ToString() -eq 'Running'; timeSource = ((& w32tm.exe /query /source 2>$null) -join ' ').Trim() }
+        }
+        $after = [datetime]::UtcNow
+        $guestUtc = [datetime]::Parse($guest.utcNow, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        $middle = $before.AddTicks([long](($after - $before).Ticks / 2))
+        $offset = ($guestUtc - $middle).TotalSeconds
+        $ready = $guest.timeServiceRunning -and $guest.timeSource -like '*time.windows.com*' -and [math]::Abs($offset) -le 60
+        $result = @{ hostUtc = $middle.ToString('o'); guestUtc = $guest.utcNow; observedOffsetSeconds = $offset; allowedOffsetSeconds = 60; timeServiceRunning = $guest.timeServiceRunning; timeSource = $guest.timeSource; selectedClockChecksPassed = [bool]$ready; clockManuallyAdjusted = $false }
+        if ($ready -or $timer.Elapsed.TotalSeconds -gt 600) { return $result }
+        Start-Sleep -Seconds 5
     }
 }

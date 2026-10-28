@@ -14,7 +14,7 @@ WORKER = (ROOT / 'scripts/smal-guest-bootstrap-worker.ps1').read_text()
 
 class GuestBootstrapJobTests(unittest.TestCase):
     def test_scripts_parse(self):
-        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1', 'recover-smal-guest-bootstrap-network.ps1', 'inspect-smal-node-cleanup-failure.ps1']:
+        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1', 'recover-smal-guest-bootstrap-network.ps1', 'inspect-smal-node-cleanup-failure.ps1', 'recover-smal-node-cleanup.ps1']:
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
 
@@ -99,6 +99,32 @@ class GuestBootstrapJobTests(unittest.TestCase):
         code = "@('state.json','worker.ps1','bundle.json')|ForEach-Object {$_.Replace('.json','').Replace('.ps1','') + '.before-network-recovery.' + $(if($_.EndsWith('.ps1')){'ps1'}else{'json'})}|ConvertTo-Json -Compress"
         result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(result.stdout), ['state.before-network-recovery.json', 'worker.before-network-recovery.ps1', 'bundle.before-network-recovery.json'])
+
+    def test_mutable_state_conversion_preserves_retained_proofs_and_arrays(self):
+        function = re.search(r'function ConvertTo-MutableBootstrapValue \{\n.*?\n\}', WORKER, re.S).group(0)
+        code = "$ErrorActionPreference='Stop';\n" + function + "\n$inputValue='{\"domain\":{\"dnsRoot\":\"ad.localbox.test\"},\"cleanup\":{\"LB-DC01\":{\"verified\":true}},\"empty\":[],\"single\":[{\"ip\":\"10.64.0.10\"}]}';$result=ConvertTo-MutableBootstrapValue ($inputValue|ConvertFrom-Json);$result.cleanup['LB-NODE01']=@{verified=$true};$result|ConvertTo-Json -Depth 9 -Compress"
+        result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+        data = json.loads(result.stdout)
+        self.assertEqual(data['domain']['dnsRoot'], 'ad.localbox.test')
+        self.assertTrue(data['cleanup']['LB-DC01']['verified'])
+        self.assertTrue(data['cleanup']['LB-NODE01']['verified'])
+        self.assertEqual(data['empty'], [])
+        self.assertEqual(data['single'], [{'ip': '10.64.0.10'}])
+
+    def test_node_cleanup_recovery_preserves_dc_and_skips_completed_node_work(self):
+        source = (ROOT / 'scripts/recover-smal-node-cleanup.ps1').read_text()
+        self.assertIn("$state.phase -ne 'LB-NODE01-clean-owned-answer-files-and-rotate'", source)
+        self.assertIn('dcAndNode01ConfigurationRetained = $true', source)
+        self.assertIn('node01OriginalCredentialLoginVerified = $true', source)
+        self.assertIn('-ResumeNodeCleanup', source)
+        self.assertIn("'worker.before-node-cleanup-recovery.ps1'", WORKER)
+        self.assertIn('$state = ConvertTo-MutableBootstrapValue $initial', WORKER)
+        self.assertIn("if (-not $ResumeNodeCleanup) {", WORKER)
+        self.assertIn('if (-not $resumeThisNode) {', WORKER)
+        self.assertIn('$state.cleanup[$name].answerFileCleanupNeedsReview', WORKER)
+        self.assertIn('$state.clockEvidence[$name].selectedClockChecksPassed', WORKER)
+        for forbidden in ['New-VM', 'Start-VM', 'New-VHD', 'Format-Volume', 'Initialize-Disk', 'Install-ADDSForest', 'Remove-Item', 'Set-Date']:
+            self.assertNotIn(forbidden, source)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 # Local-only guest boot/domain/bootstrap cleanup. No Azure resource or grant calls.
-param([switch]$ResumeVerified)
+param([switch]$ResumeVerified, [switch]$ResumeNodeCleanup)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\guest-bootstrap-20261028-01'
@@ -41,17 +41,37 @@ function Save-NestedNatEvidence {
     try { $sessions = @(Get-NetNatSession -ErrorAction Stop | Where-Object InternalSourceAddress -EQ $Ip | Select-Object Protocol, InternalSourceAddress, InternalSourcePort, ExternalSourceAddress, ExternalSourcePort, InternalDestinationAddress, InternalDestinationPort, ExternalDestinationAddress, ExternalDestinationPort); $captured = $true } catch { }
     $state.natEvidence[$Name] = @{ atUtc = (Get-Date).ToUniversalTime().ToString('o'); sessions = $sessions; captureSucceeded = $captured; expectedOuterSource = '10.200.16.4'; observedSourceTranslation = ($captured -and $sessions.Count -gt 0 -and @($sessions | Where-Object ExternalSourceAddress -NE '10.200.16.4').Count -eq 0) }
 }
+function ConvertTo-MutableBootstrapValue {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [Collections.IDictionary]) { $result = @{}; foreach ($key in $Value.Keys) { $result[$key] = ConvertTo-MutableBootstrapValue $Value[$key] }; return $result }
+    if ($Value -is [pscustomobject]) { $result = @{}; foreach ($property in $Value.PSObject.Properties) { $result[$property.Name] = ConvertTo-MutableBootstrapValue $property.Value }; return $result }
+    if ($Value -is [Collections.IEnumerable] -and $Value -isnot [string]) { $array = @(foreach ($item in $Value) { ConvertTo-MutableBootstrapValue $item }); return ,$array }
+    return $Value
+}
 try {
+    if ($ResumeVerified -and $ResumeNodeCleanup) { throw 'Only one exact recovery mode is allowed' }
     if ($ResumeVerified) {
         $proof = Get-Content (Join-Path $root 'network-recovery-01.json') -Raw | ConvertFrom-Json
         if ($proof.kind -ne 'verified-dc-before-network-before-directory' -or $proof.runId -ne 'guest-bootstrap-20261028-01' -or (Get-FileHash (Join-Path $root 'worker.before-network-recovery.ps1')).Hash -cne '880F2068D876507DDD0E9FC76C8D1905EAFA49A8F1CD542C42E095C4391B7E79' -or -not (Test-Path (Join-Path $root 'execution.started'))) { throw 'Exact DC-only recovery evidence differs' }
     }
-    $markerName = if ($ResumeVerified) { 'network-recovery-01.started' } else { 'execution.started' }
+    if ($ResumeNodeCleanup) {
+        $proof = Get-Content (Join-Path $root 'node-cleanup-recovery-01.json') -Raw | ConvertFrom-Json
+        if ($proof.kind -ne 'verified-node01-cleanup-before-node02' -or $proof.runId -ne 'guest-bootstrap-20261028-01' -or (Get-FileHash (Join-Path $root 'worker.before-node-cleanup-recovery.ps1')).Hash -cne '462DED0CD6F44CEF5D2882200FDF374F57CCA1FB60D8528AD59D7D3AEC3A6983' -or -not (Test-Path (Join-Path $root 'execution.started')) -or -not (Test-Path (Join-Path $root 'network-recovery-01.started'))) { throw 'Exact node cleanup recovery evidence differs' }
+    }
+    $markerName = if ($ResumeVerified) { 'network-recovery-01.started' } elseif ($ResumeNodeCleanup) { 'node-cleanup-recovery-01.started' } else { 'execution.started' }
     $marker = [IO.File]::Open((Join-Path $root $markerName), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
     $initial = Get-Content $statePath -Raw | ConvertFrom-Json
     $state = [ordered]@{ runId = 'guest-bootstrap-20261028-01'; sourceCommit = $initial.sourceCommit; scope = 'approved-local-guest-boot-domain-and-secret-cleanup-only'; status = 'running'; phase = 'identity-check'; atUtc = $null; errorType = $null; errorLine = $null; guestConfiguration = @{}; cleanup = @{}; newCredentialLoginVerified = @{}; connectivity = @{}; natEvidence = @{}; domain = $null; guestUpdateAssessmentPerformed = $false; evaluationActivationVerified = $false; nodeDomainJoinPerformed = $false; azureRegistrationPerformed = $false; clusterBootstrapComplete = $false }
     $state.errorCode = $null
-    if ($ResumeVerified) {
+    $state.clockEvidence = @{}
+    if ($ResumeNodeCleanup) {
+        $state = ConvertTo-MutableBootstrapValue $initial
+        $state.status = 'running'; $state.phase = 'identity-check'; $state.errorType = $null; $state.errorLine = $null; $state.errorCode = $null
+        if (-not $state.ContainsKey('clockEvidence')) { $state.clockEvidence = @{} }
+        $state.resumedNode01Cleanup = $true
+    }
+    if ($ResumeVerified -or $ResumeNodeCleanup) {
         if ($proof.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Recovery source evidence missing' }
         $state.previousSourceCommit = $initial.sourceCommit; $state.sourceCommit = $proof.sourceCommit; $state.resumedDcNetworkPhase = $true
     }
@@ -105,13 +125,14 @@ public static class LocalBoxGuestBootstrapHeartbeat {
     if ($bundle.schemaVersion -ne 1 -or @($bundle.files).Count -ne 2 -or @(Compare-Object $expectedNames @($bundle.files | ForEach-Object name)).Count -ne 0) { throw 'Unexpected bootstrap helper bundle' }
     foreach ($item in $bundle.files) {
         $path = Join-Path $root $item.name; $bytes = [Convert]::FromBase64String($item.base64)
-        if (-not $ResumeVerified) {
+        if (-not $ResumeVerified -and -not $ResumeNodeCleanup) {
             $file = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
             try { $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
         }
         if ((Get-FileHash $path).Hash -cne $item.sha256) { throw 'Bootstrap helper integrity differs' }
         . $path
     }
+    if (-not $ResumeNodeCleanup) {
     if ($ResumeVerified) {
         $dc = Get-VM -Id 'f94c71f1-6854-48b9-a9f1-8238c99366d0'
         if ($dc.Name -cne 'LB-DC01' -or $dc.State.ToString() -ne 'Running') { throw 'Exact running DC recovery target differs' }
@@ -160,11 +181,18 @@ public static class LocalBoxGuestBootstrapHeartbeat {
     $session = Wait-LabGuestSession -VmId $dc.Id -ExpectedName 'LB-DC01' -Credential $dcFinalCredential
     $state.newCredentialLoginVerified['LB-DC01'] = $true
     Remove-PSSession -Session $session; $session = $null
+    }
     foreach ($row in @(@{ name = 'LB-NODE01'; prefix = 'node01'; ip = '10.64.0.11' }, @{ name = 'LB-NODE02'; prefix = 'node02'; ip = '10.64.0.12' })) {
-        $node = Start-ExactGuest $row.name
+        $resumeThisNode = $ResumeNodeCleanup -and $row.name -eq 'LB-NODE01'
+        if ($resumeThisNode) {
+            $node = Get-VM -Id '3adff629-2f67-449b-ab32-8a8748c46f34'
+            if ($node.Name -cne 'LB-NODE01' -or $node.State.ToString() -ne 'Running') { throw 'Exact running node cleanup target differs' }
+            Save-BootstrapState 'resume-existing-node01-no-repeat-boot-or-network'
+        } else { $node = Start-ExactGuest $row.name }
         $credential = New-StoredGuestCredential -User ($row.name + '\Administrator') -Role ($row.prefix + '-bootstrap')
         Save-BootstrapState ($row.name + '-wait-for-setup-and-direct-session')
         $session = Wait-LabGuestSession -VmId $node.Id -ExpectedName $row.name -Credential $credential
+        if (-not $resumeThisNode) {
         Save-BootstrapState ($row.name + '-configure-exact-guest-network')
         $state.guestConfiguration[$row.name] = Set-LabGuestNetwork -Session $session -VmName $row.name -Adapters @(Get-VMNetworkAdapter -VM $node | Select-Object Name, MacAddress)
         Save-BootstrapState ($row.name + '-verify-or-install-nested-hyperv')
@@ -187,6 +215,9 @@ public static class LocalBoxGuestBootstrapHeartbeat {
             $hostInfo = Get-VMHost
             @{ vmmsRunning = $true; logicalProcessors = $hostInfo.LogicalProcessorCount; guestReportedCores = [int](Get-CimInstance Win32_Processor | Measure-Object NumberOfCores -Sum).Sum; memoryBytes = $hostInfo.MemoryCapacity; defenderEnabled = (Get-MpComputerStatus).RealTimeProtectionEnabled; guestFirewallEnabled = @(Get-NetFirewallProfile | Where-Object Enabled -NE $true).Count -eq 0 }
         }
+        }
+        Save-BootstrapState ($row.name + '-verify-clock-without-manual-adjustment')
+        $state.clockEvidence[$row.name] = Get-LabGuestClockEvidence -Session $session
         Save-BootstrapState ($row.name + '-verify-nested-connectivity')
         $state.connectivity[$row.name] = Test-LabGuestConnectivity -Session $session
         Save-NestedNatEvidence -Name $row.name -Ip $row.ip
@@ -201,11 +232,11 @@ public static class LocalBoxGuestBootstrapHeartbeat {
     }
     $passed = $state.domain.defenderEnabled -and $state.domain.guestFirewallEnabled
     foreach ($name in @('LB-DC01', 'LB-NODE01', 'LB-NODE02')) {
-        if (-not $state.newCredentialLoginVerified[$name] -or $state.cleanup[$name].setupLogsNeedReview -or -not $state.connectivity[$name].transportChecksPassed -or -not $state.natEvidence[$name].observedSourceTranslation) { $passed = $false }
+        if (-not $state.newCredentialLoginVerified[$name] -or $state.cleanup[$name].setupLogsNeedReview -or $state.cleanup[$name].answerFileCleanupNeedsReview -or -not $state.connectivity[$name].transportChecksPassed -or -not $state.natEvidence[$name].observedSourceTranslation) { $passed = $false }
     }
     foreach ($name in @('LB-NODE01', 'LB-NODE02')) {
         $health = $state.guestConfiguration[$name].nestedHyperv
-        if (-not $health.vmmsRunning -or -not $health.defenderEnabled -or -not $health.guestFirewallEnabled -or $health.logicalProcessors -ne 12 -or $health.memoryBytes -lt 90GB) { $passed = $false }
+        if (-not $health.vmmsRunning -or -not $health.defenderEnabled -or -not $health.guestFirewallEnabled -or $health.logicalProcessors -ne 12 -or $health.memoryBytes -lt 90GB -or -not $state.clockEvidence[$name].selectedClockChecksPassed) { $passed = $false }
     }
     $state.status = if ($passed) { 'local-bootstrap-configured-and-checked' } else { 'local-bootstrap-configured-checks-pending' }
     Save-BootstrapState 'local-only-bootstrap-finished-no-azure-registration'

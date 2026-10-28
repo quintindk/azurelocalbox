@@ -209,7 +209,7 @@ def main(script, name):
             'smal-guest-secret-functions.ps1', 'smal-guest-image-functions.ps1', 'smal-guest-vm-functions.ps1']}
         source = render_guest_image_installer(source, exact_guest_bytes('scripts/smal-guest-image-worker.ps1'),
                                               exact_guest_bytes('docs/deployment-2026-10-28/local-guest-image-manifest.json'), helpers, head)
-    if relative in ['scripts/start-smal-guest-bootstrap-job.ps1', 'scripts/recover-smal-guest-bootstrap-network.ps1']:
+    if relative in ['scripts/start-smal-guest-bootstrap-job.ps1', 'scripts/recover-smal-guest-bootstrap-network.ps1', 'scripts/recover-smal-node-cleanup.ps1']:
         def exact_bootstrap_bytes(name):
             data = (ROOT / name).read_bytes()
             if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
@@ -236,6 +236,14 @@ def main(script, name):
                     or guest.get('protection', {}).get('RealTimeProtectionEnabled') is not True
                     or any(item['IPAddress'] != '127.0.0.1' and not item['IPAddress'].startswith('169.254.') for item in guest.get('ipv4', []))):
                 raise RuntimeError('Exact no-network-effects pre-directory recovery evidence missing')
+        if relative == 'scripts/recover-smal-node-cleanup.ps1':
+            observed = json.loads((OUT / 'private-ssh-node01-cleanup-failure-inspection-20261028.json').read_text())
+            result = observed.get('result', {})
+            guest = result.get('guest', {})
+            if (observed.get('status') != 'complete' or result.get('originalBootstrapLoginVerified') is not True
+                    or guest.get('computer') != 'LB-NODE01' or guest.get('domainRole') != 2 or guest.get('vmmsRunning') is not True
+                    or result.get('mutationPerformed') is not False):
+                raise RuntimeError('Exact original-credential/standalone-node cleanup proof missing')
         helpers = {name: exact_bootstrap_bytes('scripts/' + name) for name in [
             'smal-guest-secret-functions.ps1', 'smal-guest-direct-functions.ps1']}
         source = render_guest_bootstrap_installer(source, exact_bootstrap_bytes('scripts/smal-guest-bootstrap-worker.ps1'), manifest, helpers, head)
