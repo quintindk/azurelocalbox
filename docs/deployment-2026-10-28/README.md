@@ -1,5 +1,36 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Continuing toward registration
+
+The next reviewed owner decision is now concrete:
+[`cloud-apply-proposal.md`](cloud-apply-proposal.md) and its exact JSON effect list.
+It remains unapproved/unapplied. New resource names were available when checked,
+the new platform RG was absent, first-party RP/role IDs were inspected and no
+application/role/provider/resource was created by these reads.
+
+Fresh guest inspection at **13:06 SAST** verified both installed HCI OS builds
+`26100.33650`, standalone nodes, zero S2D pools and exactly four RAW 170 GiB data
+disks per node. The supported built-in `AzureEdgeBootstrap` module is version
+`1.0.0` on both, manifest SHA-256
+`70B11110F8483898A5CB3667A92F26315361847437832826C58DE53320746F0F`, with explicit
+`TargetSolutionVersion` support. It was inspected, not invoked for registration.
+The DC is `26100.32230`, still in Evaluation grace, not yet activation-verified.
+Node OS licence status `1` does **not** establish Azure Local service registration
+or approve subsequent platform charges.
+
+The current upstream template and optional AD helper are pinned and audited in
+[`registration-source-review.md`](registration-source-review.md). Neither was
+executed. Mixed-release rendered documentation incorrectly exposed the old ARB
+app/secret prerequisite. Source monikers exclude it for 2610, so no new Entra app is
+proposed. Common node credentials, scoped OU/GPO preparation, deployment-vault
+public access, precise RBAC, metered costs and diagnostic exports are explicit
+remaining decisions, not assumed by the previous local bootstrap approval.
+
+The single-page scraper again reported above-cap credits, including one parallel
+response. All captures are retained in `spider-single-page-budget-observation.json`.
+Further Spider calls were stopped. Public GitHub/blob and Retail Prices JSON API
+reads were used afterwards. No tool-reported credit figure is a currency invoice.
+
 ## Latest verified result, 12:08 SAST
 
 **Approved local guest bootstrap finished successfully at 12:07:07 SAST, task result

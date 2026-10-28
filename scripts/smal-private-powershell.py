@@ -191,6 +191,15 @@ def main(script, name):
         if decisions.get('localGuestPlanApproved') is not True or decisions.get('localAddressAllocationConfirmedByOwner') is not True or hashlib.sha256(proposal_bytes).hexdigest() != decisions.get('localGuestPlanSha256'):
             raise RuntimeError('Exact local network allocation approval missing')
         source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
+    if relative == 'scripts/activate-smal-dc-evaluation.ps1':
+        decision_path = 'docs/deployment-2026-10-28/deployment-decisions.json'
+        decision_bytes = (ROOT / decision_path).read_bytes()
+        if decision_bytes != subprocess.check_output(['git', 'show', 'HEAD:' + decision_path], cwd=ROOT):
+            raise RuntimeError('Evaluation consent differs from committed source')
+        decisions = json.loads(decision_bytes)
+        if decisions.get('managementEvaluationMediaAndTermsApproved') is not True or decisions.get('localGuestMediaInstallationAndRebootsApproved') is not True:
+            raise RuntimeError('Accepted Evaluation use/terms approval missing')
+        source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
     if relative == 'scripts/start-smal-guest-image-job.ps1':
         def exact_guest_bytes(name):
             data = (ROOT / name).read_bytes()
@@ -279,6 +288,7 @@ def main(script, name):
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
+                     'scripts/activate-smal-dc-evaluation.ps1': 300,
                      'scripts/inspect-smal-guest-inputs.ps1': 300,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     record['guestCommandTimeoutSeconds'] = guest_timeout
