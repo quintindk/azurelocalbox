@@ -56,6 +56,12 @@ temporary-secret/DPAPI boundary. These decisions are recorded and source-hash-bo
    and their destinations/retention. Obtain specific owner acceptance and resolve
    any policy conflict with its responsible owner. No exemptions, bypass tags or
    removal of required exports.
+   The freshly retained [official permission guide](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610)
+   also names a diagnostic storage account, vault audit logging and Key Vault
+   **data-plane** roles. An existing broad control-plane role is not proof of
+   secret data access. Inspect actual effective permissions and the exact required
+   resource set, not just role display names. Its provider/role examples were read,
+   not executed. See `cloud-permissions-source-review.json`.
 7. Give Entlz the selected actual vault and any required gateway hostnames, plus
    version-specific endpoint deltas. Existing source-scoped `*.microsoft.com`
    admission does not cover every Azure namespace. No implicit firewall mutation,

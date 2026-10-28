@@ -14,7 +14,7 @@ WORKER = (ROOT / 'scripts/smal-guest-bootstrap-worker.ps1').read_text()
 
 class GuestBootstrapJobTests(unittest.TestCase):
     def test_scripts_parse(self):
-        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1', 'recover-smal-guest-bootstrap-network.ps1']:
+        for name in ['start-smal-guest-bootstrap-job.ps1', 'smal-guest-bootstrap-worker.ps1', 'read-smal-guest-bootstrap-job.ps1', 'inspect-smal-guest-bootstrap-failure.ps1', 'recover-smal-guest-bootstrap-network.ps1', 'inspect-smal-node-cleanup-failure.ps1']:
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
 

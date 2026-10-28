@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 11:16 SAST
+## Latest verified result, 11:45 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -84,12 +84,37 @@
   the running DC's network phase. It adds a bounded read-only protection-readiness
   wait without changing Defender or firewall settings. Future failures record only
   known public guard codes or a restricted error identifier, never raw messages.
+- The guarded resume succeeded without image/VM recreation. At **11:38:27 SAST**,
+  `ad.localbox.test` / `LOCALBOX` existed with Windows Server 2016 forest/domain
+  functional levels. DC DNS forwards to `10.204.0.4`; protection remains enabled.
+  Domain SRV and normal/TCP private DNS passed, public HTTPS returned `200`, the
+  private vault root returned unauthenticated `404` and matched NTP passed.
+- Actual DC WinNAT sessions demonstrate `10.64.0.10` translated to `10.200.16.4`
+  for central DNS `10.204.0.4:53`, private vault `10.200.17.4:443`, public HTTPS and
+  NTP. Historical root-server DNS **attempt** sessions also appear from before
+  forwarding was configured; their presence does not establish allowed replies.
+- The DC's owned answer file was removed, its bootstrap credential rotated and a
+  new-credential login verified. Setup-log inspection found no old-value match.
+  No secure-erasure claim. Node 1 has now started and is completing setup/session
+  readiness. Node 2 remains off until the preceding node stage completes.
+- At **11:45:26 SAST**, node 1 had completed setup, management networking and nested
+  Hyper-V verification: 12 logical processors, **6 guest-reported cores**, about
+  96 GiB, VMMS running, Defender/firewalls enabled. Domain/private DNS, public/private
+  HTTPS, NTP responses and observed source translation passed from that node too.
+  This core report is not an authoritative Azure Local billing assessment.
+- The continuation then stopped at node 1's answer-file/credential cleanup with
+  `IOException`, task result `1`. Its credential rotation is **not confirmed** and
+  node 2 remains off. Inspect exact setup-file readability/ownership and account
+  state before a cleanup-only resume. Do not replay the forest, images or VMs.
+- Node 1's recorded UTC timestamp was two hours behind the host. A matched NTP
+  response did not establish clock synchronisation, as already flagged in state.
+  Reconcile the actual clock/time service before registration or a domain join.
 
-| Guest | VM ID | Memory | vCPU | State at 11:12 SAST |
+| Guest | VM ID | Memory | vCPU | State at 11:45 SAST |
 |---|---|---:|---:|---|
-| `LB-DC01` | `f94c71f1-6854-48b9-a9f1-8238c99366d0` | 4 GiB | 2 | Running, setup/session pending |
-| `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Off, awaiting DC stage |
-| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Off, awaiting DC stage |
+| `LB-DC01` | `f94c71f1-6854-48b9-a9f1-8238c99366d0` | 4 GiB | 2 | Running, domain/DNS and selected transport checks passed |
+| `LB-NODE01` | `3adff629-2f67-449b-ab32-8a8748c46f34` | 96 GiB | 12 | Running, nested Hyper-V/transport passed, cleanup/clock pending |
+| `LB-NODE02` | `12a44e0c-cc08-4c4c-a812-fa0b56efdbc3` | 96 GiB | 12 | Off, awaiting node 1 stage |
 
 Current receipts:
 
@@ -107,6 +132,9 @@ Current receipts:
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-02.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-job-progress-20261028-03.json`
 - `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-failure-inspection-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-20261028.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-03.json`
+- `../deployment-2026-10-27/private-ssh-guest-bootstrap-network-recovery-progress-20261028-04.json`
 
 ## Verified starting state and recovery
 
