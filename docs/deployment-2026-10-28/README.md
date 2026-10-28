@@ -1,6 +1,6 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## Latest verified result, 09:51 SAST
+## Latest verified result, 09:56 SAST
 
 - The approved storage job is **storage-complete**, task result `0`. Independent
   readback at 09:49 SAST found Healthy NTFS V: at **2,181,825,495,040 bytes**.
@@ -18,12 +18,24 @@
   Complete comment traversal contains no closure explanation. This conflicts with
   actual readiness. No cause is inferred and no task was reopened or redispatched.
 - The cancelled cron remains off. The storage job has no recurring trigger.
+- The approved Evaluation-media one-shot task is **media-downloaded**, task result
+  `0`, independently read at 09:56 SAST. Final length is **8,152,356,864 bytes**,
+  no partial file remains, and the worker's measured SHA-256 is
+  `7B052573BA7894C9924E3E87BA732CCD354D18CB75A883EFA9B900EA125BFD51`.
+  No publisher SHA-256 was supplied. The ISO remains unmounted/unexecuted at
+  `C:\ProgramData\AzureLocalBox\Bootstrap\eval-media-20261028-01\WindowsServer2025Evaluation.26100.32230.x64.en-us.iso`.
+- One observation timed out before SSH authentication. Its failure receipt remains
+  intact. Independent Azure readback showed Running/agent Ready and the VPN route
+  remained on tun0. A new read-only observation succeeded. The download task was
+  neither restarted nor reinstalled.
 
 Current receipts:
 
 - `../deployment-2026-10-27/private-ssh-storage-worker-recovery-framed-20261028.json`
 - `../deployment-2026-10-27/private-ssh-storage-job-progress-20261028-02.json`
 - `../deployment-2026-10-27/private-ssh-eval-media-access-post-wildcard-20261028.json`
+- `../deployment-2026-10-27/private-ssh-eval-media-job-start-20261028.json`
+- `../deployment-2026-10-27/private-ssh-eval-media-job-final-observation-20261028.json`
 
 ## Verified starting state and recovery
 
@@ -147,3 +159,8 @@ HTML read resolved the exact links without another crawl. No user secrets were s
 
 The remaining local guest/network/credential implementation and exact registration
 scope/cost/export decisions still need completion before a full deployment claim.
+
+The [local guest apply proposal](local-guest-apply-proposal.md) now defines the
+proposed two-node/DC resource budget, initial single-switch management topology,
+one NAT selector, domain DNS and temporary-secret/DPAPI boundary. It is not approval
+or executable guest/domain code. Future AKS/pod/service networks remain unused.
