@@ -15,7 +15,7 @@ WORKER = (ROOT / 'scripts/smal-eval-media-worker.ps1').read_text()
 
 class EvaluationMediaTests(unittest.TestCase):
     def test_powershell_scripts_parse(self):
-        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1']:
+        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1', 'read-smal-guest-inspection.ps1']:
             path = ROOT / 'scripts' / name
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e | ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)

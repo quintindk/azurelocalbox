@@ -134,6 +134,13 @@ def main(script, name):
             raise RuntimeError('Explicit Evaluation media and terms approval missing')
         source = render_storage_installer(source, exact_media_bytes('scripts/smal-eval-media-worker.ps1'),
                                           exact_media_bytes('docs/deployment-2026-10-28/eval-media-job-manifest.json'), head)
+    if relative == 'scripts/read-smal-guest-inspection.ps1':
+        prior = json.loads((OUT / 'private-ssh-guest-input-inspection-20261028.json').read_text())
+        old_source = subprocess.check_output(['git', 'show', prior['commit'] + ':scripts/inspect-smal-guest-inputs.ps1'], cwd=ROOT)
+        if hashlib.sha256(old_source).hexdigest() != prior['renderedSourceSha256']:
+            raise RuntimeError('Exact historical inspection differs from receipt')
+        selector = base64.b64encode(old_source.decode('utf-8').encode('utf-16-le')).decode('ascii')
+        source = source.decode('utf-8').replace('__GUEST_INSPECTION_ENCODED__', selector).encode('utf-8')
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
