@@ -44,7 +44,7 @@ class StorageJobTests(unittest.TestCase):
         self.assertLess(len(helpers['stdin_loader'](source)), 16000)
 
     def test_powershell_scripts_parse(self):
-        for name in ['smal-storage-worker.ps1', 'start-smal-storage-job.ps1', 'read-smal-storage-job.ps1', 'inspect-smal-eval-media-access.ps1']:
+        for name in ['smal-storage-worker.ps1', 'start-smal-storage-job.ps1', 'read-smal-storage-job.ps1', 'recover-smal-storage-job.ps1', 'inspect-smal-eval-media-access.ps1']:
             code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True)
 
@@ -70,6 +70,16 @@ class StorageJobTests(unittest.TestCase):
         self.assertNotIn('RestartCount', installer)
         self.assertNotIn('-ExecutionPolicy Bypass', installer)
         self.assertIn('Storage job already exists', installer)
+
+    def test_recovery_is_only_for_exact_no_storage_effects_checkpoint_failure(self):
+        recovery = (ROOT / 'scripts/recover-smal-storage-job.ps1').read_text()
+        self.assertIn('Storage effects exist. This recovery is not applicable.', recovery)
+        self.assertIn('Original preflight failure no longer matches inspection', recovery)
+        self.assertIn("'worker.before-recovery.ps1'", recovery)
+        self.assertIn('originalMarkerRetained = $true', recovery)
+        self.assertIn('[IO.FileMode]::CreateNew', recovery)
+        for forbidden in ['Remove-Item', 'Format-Volume', 'Initialize-Disk', 'New-StoragePool', 'Stop-Process']:
+            self.assertNotIn(forbidden, recovery)
 
     def test_scope_and_manifest_are_explicit_and_never_cloud_or_nested_apply(self):
         manifest = json.loads((ROOT / 'docs/deployment-2026-10-28/storage-job-manifest.json').read_text())

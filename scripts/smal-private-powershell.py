@@ -80,7 +80,7 @@ def main(script, name):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
-    if relative == 'scripts/start-smal-storage-job.ps1':
+    if relative in ['scripts/start-smal-storage-job.ps1', 'scripts/recover-smal-storage-job.ps1']:
         def exact_bytes(name):
             data = (ROOT / name).read_bytes()
             if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):
@@ -89,6 +89,17 @@ def main(script, name):
         decisions = json.loads(exact_bytes('docs/deployment-2026-10-28/deployment-decisions.json'))
         if decisions.get('simpleStorageFormattingApproved') is not True:
             raise RuntimeError('Explicit Simple storage approval missing')
+        if relative == 'scripts/recover-smal-storage-job.ps1':
+            checked = json.loads((OUT / 'private-ssh-storage-worker-diagnostic-20261028.json').read_text())
+            evidence = checked.get('result', {})
+            diagnostic = evidence.get('diagnostic', {})
+            if (checked.get('status') != 'complete' or evidence.get('taskState') != 'Ready'
+                    or evidence.get('lastTaskResult') != 1 or evidence.get('volume') is not None
+                    or diagnostic.get('poolExists') is not False or diagnostic.get('virtualDiskExists') is not False
+                    or diagnostic.get('temporaryProcessExists') is not False
+                    or diagnostic.get('temporaryStatePhase') != 'initialising'
+                    or diagnostic.get('rawDataDiskCount') != 8 or diagnostic.get('poolablePhysicalDiskCount') != 8):
+                raise RuntimeError('Exact preflight/no-storage-effects recovery not reconciled')
         manifest = exact_bytes('docs/deployment-2026-10-28/storage-job-manifest.json')
         source = render_storage_installer(source, exact_bytes('scripts/smal-storage-worker.ps1'), manifest, head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'

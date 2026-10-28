@@ -1,4 +1,5 @@
 # One-shot approved storage phase. This is NOT a complete cluster bootstrap.
+param([switch]$ResumeVerified)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\storage-20261028-01'
@@ -14,7 +15,12 @@ function Save-State {
 }
 $mutex = [Threading.Mutex]::new($false, 'Global\AzureLocalBox-Storage-20261028-01')
 if (-not $mutex.WaitOne(0)) { $mutex.Dispose(); exit 2 }
-try { $started = [IO.File]::Open((Join-Path $root 'execution.started'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $started.Dispose() }
+if ($ResumeVerified) {
+    $proof = Get-Content (Join-Path $root 'recovery-authorised.json') -Raw | ConvertFrom-Json
+    if ($proof.runId -ne $state.runId -or $proof.kind -ne 'verified-preflight-no-storage-effects' -or $proof.priorWorkerSha256 -ne '8C4B65A8299101ABA4ADEC3A6513432DFA0785571FA34322D6E7929749B490B0' -or (Get-FileHash (Join-Path $root 'worker.before-recovery.ps1')).Hash -ne $proof.priorWorkerSha256 -or -not (Test-Path (Join-Path $root 'execution.started'))) { $mutex.ReleaseMutex(); $mutex.Dispose(); exit 4 }
+}
+$attemptMarker = if ($ResumeVerified) { 'recovery-01.started' } else { 'execution.started' }
+try { $started = [IO.File]::Open((Join-Path $root $attemptMarker), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $started.Dispose() }
 catch { $mutex.ReleaseMutex(); $mutex.Dispose(); exit 3 }
 $heartbeatStarted = $false
 try {
@@ -33,6 +39,12 @@ try {
     $initial = Get-Content $statePath -Raw | ConvertFrom-Json
     if ($initial.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Source commit evidence missing' }
     $state.sourceCommit = $initial.sourceCommit
+    if ($ResumeVerified) {
+        if ($proof.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Recovery source evidence missing' }
+        $state.previousSourceCommit = $initial.sourceCommit
+        $state.sourceCommit = $proof.sourceCommit
+        $state.resumedAfterVerifiedNoEffects = $true
+    }
     $state.workerSha256 = (Get-FileHash $PSCommandPath -Algorithm SHA256).Hash
     Save-State
     Add-Type -TypeDefinition @'
