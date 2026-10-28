@@ -141,7 +141,7 @@ def main(script, name):
             raise RuntimeError('Exact historical inspection differs from receipt')
         selector = base64.b64encode(old_source.decode('utf-8').encode('utf-16-le')).decode('ascii')
         source = source.decode('utf-8').replace('__GUEST_INSPECTION_ENCODED__', selector).encode('utf-8')
-    if relative == 'scripts/start-smal-guest-input-job.ps1':
+    if relative in ['scripts/start-smal-guest-input-job.ps1', 'scripts/recover-smal-guest-input-hash.ps1']:
         def exact_input_bytes(name):
             data = (ROOT / name).read_bytes()
             if data != subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=ROOT):

@@ -15,7 +15,7 @@ WORKER = (ROOT / 'scripts/smal-eval-media-worker.ps1').read_text()
 
 class EvaluationMediaTests(unittest.TestCase):
     def test_powershell_scripts_parse(self):
-        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1', 'read-smal-guest-inspection.ps1', 'stop-smal-guest-inspection.ps1', 'start-smal-guest-input-job.ps1', 'smal-guest-input-worker.ps1', 'read-smal-guest-input-job.ps1']:
+        for name in ['smal-eval-media-worker.ps1', 'start-smal-eval-media-job.ps1', 'read-smal-eval-media-job.ps1', 'inspect-smal-guest-inputs.ps1', 'read-smal-guest-inspection.ps1', 'stop-smal-guest-inspection.ps1', 'start-smal-guest-input-job.ps1', 'smal-guest-input-worker.ps1', 'read-smal-guest-input-job.ps1', 'recover-smal-guest-input-hash.ps1']:
             path = ROOT / 'scripts' / name
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e | ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
@@ -111,6 +111,28 @@ class EvaluationMediaTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(proposal).hexdigest(), decisions['localGuestPlanSha256'])
         self.assertTrue(decisions['localGuestPlanApproved'])
         self.assertTrue(decisions['hostBoundDpapiGuestSecretsApproved'])
+
+    def test_buffered_hash_matches_sha256_and_records_exact_read_bytes(self):
+        worker = (ROOT / 'scripts/smal-guest-input-worker.ps1').read_text()
+        function = re.search(r'function Get-BufferedInspectionHash \{\n.*?\n\}', worker, re.S).group(0)
+        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as directory:
+            path = Path(directory) / 'public-synthetic-media.bin'
+            data = bytes(range(256)) * 17000 + b'final partial block'
+            path.write_bytes(data)
+            code = "$ErrorActionPreference='Stop';$state=@{hashBytesRead=0L;phase='test'};function Save-Inspection {}\n" + function + "\n$hash=Get-BufferedInspectionHash -Path '" + str(path) + "';@{hash=$hash;bytes=$state.hashBytesRead}|ConvertTo-Json -Compress"
+            result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+            self.assertEqual(json.loads(result.stdout), {'hash': hashlib.sha256(data).hexdigest().upper(), 'bytes': len(data)})
+
+    def test_hash_recovery_is_exact_read_only_phase_and_preserves_original(self):
+        source = (ROOT / 'scripts/recover-smal-guest-input-hash.ps1').read_text()
+        self.assertIn("$state.phase -ne 'azure-local-hash-check'", source)
+        self.assertIn("'worker.before-buffered-hash.ps1'", source)
+        self.assertIn("'state.before-buffered-hash.json'", source)
+        self.assertIn('Stop-ScheduledTask -TaskName $taskName', source)
+        self.assertLess(source.index('Media attached; hash-only recovery not applicable'), source.index('Stop-ScheduledTask'))
+        self.assertIn('Inspection advanced during stop; preserve and inspect', source)
+        for forbidden in ['Remove-Item', 'Format-Volume', 'Stop-Service', 'Stop-Process', 'Mount-DiskImage', 'New-NetNat']:
+            self.assertNotIn(forbidden, source)
 
 
 if __name__ == '__main__':

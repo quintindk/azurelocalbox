@@ -1,4 +1,5 @@
 # Durable read-only discovery with explicit phases and bounded HNS subprocess.
+param([switch]$ResumeVerified)
 $ErrorActionPreference = 'Stop'
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\guest-inputs-20261028-02'
 $statePath = Join-Path $root 'state.json'
@@ -13,10 +14,38 @@ function Save-Inspection {
     [IO.File]::WriteAllText($temporary, ($state | ConvertTo-Json -Depth 9), [Text.UTF8Encoding]::new($false))
     [IO.File]::Replace($temporary, $statePath, (Join-Path $root 'state.previous.json'))
 }
+function Get-BufferedInspectionHash {
+    param([string]$Path)
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read, 1MB, [IO.FileOptions]::SequentialScan)
+    $hash = [Security.Cryptography.SHA256]::Create()
+    [byte[]]$buffer = New-Object byte[] (1MB)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $state.hashBytesRead = 0L
+    try {
+        while (($count = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $null = $hash.TransformBlock($buffer, 0, $count, $buffer, 0)
+            $state.hashBytesRead += $count
+            if ($timer.Elapsed.TotalSeconds -ge 15) { Save-Inspection $state.phase; $timer.Restart() }
+        }
+        $null = $hash.TransformFinalBlock([byte[]]@(), 0, 0)
+        return [BitConverter]::ToString($hash.Hash).Replace('-', '')
+    } finally { $hash.Dispose(); $stream.Dispose() }
+}
 try {
-    $marker = [IO.File]::Open((Join-Path $root 'execution.started'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
+    if ($ResumeVerified) {
+        $proof = Get-Content (Join-Path $root 'buffered-hash-recovery.json') -Raw | ConvertFrom-Json
+        if ($proof.kind -ne 'read-only-hash-phase-restart' -or $proof.runId -ne 'guest-inputs-20261028-02' -or (Get-FileHash (Join-Path $root 'worker.before-buffered-hash.ps1')).Hash -cne '2BA7C92F8F3A67E9C11CD30A79DDA851A0EC0D477684FED3B61F14447A246C5C' -or -not (Test-Path (Join-Path $root 'execution.started'))) { throw 'Read-only hash recovery evidence differs' }
+    }
+    $markerName = if ($ResumeVerified) { 'buffered-hash-recovery.started' } else { 'execution.started' }
+    $marker = [IO.File]::Open((Join-Path $root $markerName), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
     $initial = Get-Content $statePath -Raw | ConvertFrom-Json
-    $state = [ordered]@{ runId = 'guest-inputs-20261028-02'; sourceCommit = $initial.sourceCommit; scope = 'approved-media-and-host-inspection-only'; status = 'running'; phase = 'identity-check'; atUtc = $null; errorType = $null; errorLine = $null; result = @{}; clusterBootstrapComplete = $false }
+    $state = [ordered]@{ runId = 'guest-inputs-20261028-02'; sourceCommit = $initial.sourceCommit; scope = 'approved-media-and-host-inspection-only'; status = 'running'; phase = 'identity-check'; atUtc = $null; errorType = $null; errorLine = $null; hashBytesRead = 0L; result = @{}; clusterBootstrapComplete = $false }
+    if ($ResumeVerified) {
+        if ($proof.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Recovery source evidence missing' }
+        $state.sourceCommit = $proof.sourceCommit
+        $state.previousSourceCommit = $initial.sourceCommit
+        $state.resumedReadOnlyHash = $true
+    }
     Save-Inspection 'identity-check'
     if ($env:COMPUTERNAME -ne 'LocalBox-Client' -or (Get-FileHash (Join-Path $root 'manifest.json')).Hash -ne '__MANIFEST_SHA256__') { throw 'Unexpected host/manifest' }
     $m = Get-Content (Join-Path $root 'manifest.json') -Raw | ConvertFrom-Json
@@ -55,7 +84,7 @@ try {
     )
     foreach ($item in $media) {
         Save-Inspection ($item.kind + '-hash-check')
-        if ((Get-Item -LiteralPath $item.path).Length -ne $item.length -or (Get-FileHash -LiteralPath $item.path).Hash -cne $item.sha256) { throw 'Approved media content differs' }
+        if ((Get-Item -LiteralPath $item.path).Length -ne $item.length -or (Get-BufferedInspectionHash -Path $item.path) -cne $item.sha256) { throw 'Approved media content differs' }
         $currentPath = $item.path
         if ((Get-DiskImage -ImagePath $currentPath).Attached) { throw 'Pre-existing media attachment' }
         Save-Inspection ($item.kind + '-read-only-mount')

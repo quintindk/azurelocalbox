@@ -4,6 +4,7 @@ $names = @('New-VHD', 'Mount-VHD', 'Dismount-VHD', 'Get-Disk', 'Initialize-Disk'
 $items = @($names | ForEach-Object {
     $name = $_
     $command = Get-Command -Name $name -ErrorAction SilentlyContinue
-    @{ name = $name; available = [bool]$command; parameters = $(if ($command) { @($command.Parameters.Keys | Sort-Object) } else { @() }); module = $command.ModuleName; version = $(if ($command.Module) { $command.Module.Version.ToString() } else { $null }) }
+    $safeNames = if ($command) { @($command.Parameters.Keys | Where-Object { $_ -notmatch '(?i:password|access_token|refresh_token)' } | Sort-Object) } else { @() }
+    @{ name = $name; available = [bool]$command; parameters = @($safeNames); omittedParameterCount = $(if ($command) { $command.Parameters.Count - @($safeNames).Count } else { 0 }); module = $command.ModuleName; version = $(if ($command.Module) { $command.Module.Version.ToString() } else { $null }) }
 })
 @{ atUtc = (Get-Date).ToUniversalTime().ToString('o'); commands = $items; clusterBootstrapComplete = $false } | ConvertTo-Json -Depth 5 -Compress
