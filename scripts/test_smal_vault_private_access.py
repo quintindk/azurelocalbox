@@ -31,6 +31,14 @@ class VaultPrivateAccessTests(unittest.TestCase):
         bad = copy.deepcopy(good); bad['changes'][0]['changeType'] = 'Modify'
         with self.assertRaises(RuntimeError): h['validate_preview'](bad)
 
+    def test_actual_preview_ignored_resources_are_unchanged_not_extra_writes(self):
+        h = runpy.run_path(str(ROOT / 'scripts/apply-smal-vault-deployer-role.py'), run_name='actual_role_preview_test')
+        data = json.loads((ROOT / 'docs/deployment-2026-10-28/vault-deployer-role-what-if.json').read_text())
+        h['validate_preview'](data)
+        ignored = next(x for x in data['changes'] if x['changeType'] == 'Ignore')
+        ignored['after']['location'] = 'another-region'
+        with self.assertRaises(RuntimeError): h['validate_preview'](data)
+
 
 if __name__ == '__main__':
     unittest.main()
