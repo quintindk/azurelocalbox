@@ -8,7 +8,7 @@ function Save-State {
     $state.lastUpdatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
     $temporary = $statePath + '.tmp'
     [IO.File]::WriteAllText($temporary, ($state | ConvertTo-Json -Depth 7), [Text.UTF8Encoding]::new($false))
-    if (Test-Path $statePath) { [IO.File]::Replace($temporary, $statePath, $null) } else { [IO.File]::Move($temporary, $statePath) }
+    if (Test-Path $statePath) { [IO.File]::Replace($temporary, $statePath, (Join-Path $root 'state.previous.json')) } else { [IO.File]::Move($temporary, $statePath) }
     $event = @{ atUtc = $state.lastUpdatedAtUtc; phase = $state.phase; status = $state.status; runId = $state.runId; scope = $state.scope }
     [IO.File]::AppendAllText((Join-Path $root 'events.jsonl'), (($event | ConvertTo-Json -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
 }

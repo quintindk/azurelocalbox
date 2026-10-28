@@ -11,6 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StorageJobTests(unittest.TestCase):
+    def test_powershell_checkpoint_replacement_keeps_previous_state(self):
+        source = (ROOT / 'scripts/smal-storage-worker.ps1').read_text()
+        function = re.search(r'function Save-State \{\n.*?\n\}', source, re.S).group(0)
+        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as directory:
+            code = "$ErrorActionPreference='Stop'; $root='" + directory + "'; $statePath=Join-Path $root 'state.json'; [IO.File]::WriteAllText($statePath,'{}'); $state=[ordered]@{runId='test';scope='storage-only';phase='initialising';status='running'};\n" + function + "\nSave-State; $state.phase='preflight'; Save-State; Get-Content $statePath -Raw"
+            result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, text=True, timeout=30)
+            self.assertEqual(json.loads(result.stdout)['phase'], 'preflight')
+            self.assertEqual(json.loads((Path(directory) / 'state.previous.json').read_text())['phase'], 'initialising')
+
     def test_large_reviewed_script_streams_with_integrity_and_not_windows_argv(self):
         helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='stream_test')
         source = ("# é\n" * 20000 + "@{ok=$true}|ConvertTo-Json -Compress\n").encode()
