@@ -1,5 +1,6 @@
 """Offline VM helper guard tests, not a Hyper-V integration pass."""
 from pathlib import Path
+import json
 import subprocess
 import unittest
 
@@ -30,6 +31,17 @@ class GuestVmTests(unittest.TestCase):
         self.assertIn('Get-VM -Id $vm.Id', source)
         for forbidden in ['Start-VM', 'Remove-VM', 'Stop-VM', 'Set-NetAdapter', 'Set-NetFirewall', 'Remove-Item', 'TrustedHosts', 'CredSSP']:
             self.assertNotIn(forbidden, source)
+
+    def test_inventory_handles_count_parameter_and_omits_sensitive_names(self):
+        source = (ROOT / 'scripts/inspect-smal-guest-cmdlets.ps1').read_text()
+        block = source.split('    $safeNames =', 1)[1].split('\n})', 1)[0]
+        code = "$ErrorActionPreference='Stop';function Synthetic-Inventory {param([int]$Count,[string]$Password)};$name='Synthetic-Inventory';$command=Get-Command $name;\n$safeNames =" + block + ' | ConvertTo-Json -Depth 5 -Compress'
+        result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        item = json.loads(result.stdout)
+        self.assertEqual(item['omittedParameterCount'], 1)
+        self.assertIn('Count', item['parameters'])
+        self.assertNotIn('Password', item['parameters'])
 
 
 if __name__ == '__main__':
