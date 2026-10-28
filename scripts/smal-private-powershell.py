@@ -24,8 +24,8 @@ OUT = H['OUT']
 VM_ID = f"/subscriptions/{BASE['SUB']}/resourceGroups/{BASE['RG']}/providers/Microsoft.Compute/virtualMachines/{BASE['VM']}"
 
 
-def ssh_args(port, admin, encoded):
-    return ['ssh', '-n', '-v', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
+def ssh_args(port, admin, encoded, stream_source=False):
+    return ['ssh', *([] if stream_source else ['-n']), '-v', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
             '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes',
             '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
             '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(H['KNOWN']),
@@ -34,6 +34,25 @@ def ssh_args(port, admin, encoded):
             '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
             '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
             admin + '@127.0.0.1', 'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' + encoded]
+
+
+def stdin_loader(source):
+    expected = hashlib.sha256(source).hexdigest().upper()
+    # One fixed short command reads the full reviewed UTF-8 source, checks it,
+    # then invokes it as one script. Do not feed a sequence of unguarded stdin
+    # statements to PowerShell or place a large payload on the Windows argv.
+    loader = "$ErrorActionPreference='Stop';[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);$s=[Console]::In.ReadToEnd();$h=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s));if([BitConverter]::ToString($h).Replace('-','') -cne '" + expected + "'){throw 'Reviewed script hash differs'};& ([ScriptBlock]::Create($s))"
+    return base64.b64encode(loader.encode('utf-16-le')).decode('ascii')
+
+
+def render_storage_installer(installer, worker, manifest, commit):
+    manifest_hash = hashlib.sha256(manifest).hexdigest().upper()
+    worker = worker.decode('utf-8').replace('__MANIFEST_SHA256__', manifest_hash).encode('utf-8')
+    worker_hash = hashlib.sha256(worker).hexdigest().upper()
+    return (installer.decode('utf-8').replace('__MANIFEST_BASE64__', base64.b64encode(manifest).decode())
+            .replace('__WORKER_BASE64__', base64.b64encode(worker).decode())
+            .replace('__MANIFEST_SHA256__', manifest_hash).replace('__WORKER_SHA256__', worker_hash)
+            .replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
 def main(script, name):
@@ -71,10 +90,7 @@ def main(script, name):
         if decisions.get('simpleStorageFormattingApproved') is not True:
             raise RuntimeError('Explicit Simple storage approval missing')
         manifest = exact_bytes('docs/deployment-2026-10-28/storage-job-manifest.json')
-        manifest_hash = hashlib.sha256(manifest).hexdigest().upper()
-        worker = exact_bytes('scripts/smal-storage-worker.ps1').decode().replace('__MANIFEST_SHA256__', manifest_hash).encode()
-        worker_hash = hashlib.sha256(worker).hexdigest().upper()
-        source = source.decode().replace('__MANIFEST_BASE64__', base64.b64encode(manifest).decode()).replace('__WORKER_BASE64__', base64.b64encode(worker).decode()).replace('__MANIFEST_SHA256__', manifest_hash).replace('__WORKER_SHA256__', worker_hash).replace('__SOURCE_COMMIT__', head).encode()
+        source = render_storage_installer(source, exact_bytes('scripts/smal-storage-worker.ps1'), manifest, head)
     setup_path = OUT / 'private-ssh-setup-resume1.json'
     if not setup_path.exists():
         raise RuntimeError('Successful reconciled setup receipt missing')
@@ -93,10 +109,17 @@ def main(script, name):
         reserve.bind(('127.0.0.1', 0))
         port = reserve.getsockname()[1]
     encoded = base64.b64encode(source.decode('utf-8').encode('utf-16-le')).decode('ascii')
+    stream_source = len(encoded) > 16000
+    original_encoded_length = len(encoded)
+    if stream_source:
+        encoded = stdin_loader(source)
     record = {'beganAtSast': BASE['now'](), 'status': 'pending', 'commit': head, 'script': relative,
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
+    record['scriptTransport'] = 'sha256-verified-utf8-stdin' if stream_source else 'encoded-command'
+    record['renderedSourceSha256'] = hashlib.sha256(source).hexdigest()
+    record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     record['guestCommandTimeoutSeconds'] = guest_timeout
@@ -120,7 +143,8 @@ def main(script, name):
             time.sleep(1)
         else:
             raise RuntimeError('Private Bastion tunnel not ready')
-        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=guest_timeout)
+        io = {'input': source.decode('utf-8')} if stream_source else {'stdin': subprocess.DEVNULL}
+        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded, stream_source), **io, capture_output=True, text=True, encoding='utf-8', timeout=guest_timeout)
         record['sshExitCode'] = result.returncode
         record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
         if result.returncode:

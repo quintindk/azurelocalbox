@@ -4,12 +4,36 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import runpy
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class StorageJobTests(unittest.TestCase):
+    def test_large_reviewed_script_streams_with_integrity_and_not_windows_argv(self):
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='stream_test')
+        source = ("# é\n" * 20000 + "@{ok=$true}|ConvertTo-Json -Compress\n").encode()
+        loader = helpers['stdin_loader'](source)
+        self.assertLess(len(loader), 16000)
+        result = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode(), encoding='utf-8', capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)['ok'])
+        changed = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', loader], input=source.decode() + '#changed', encoding='utf-8', capture_output=True, timeout=30)
+        self.assertNotEqual(changed.returncode, 0)
+        self.assertNotIn('-n', helpers['ssh_args'](12345, 'arcdemo', loader, stream_source=True))
+
+    def test_real_installer_payload_is_rendered_and_requires_streaming(self):
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='render_test')
+        source = helpers['render_storage_installer'](
+            (ROOT / 'scripts/start-smal-storage-job.ps1').read_bytes(),
+            (ROOT / 'scripts/smal-storage-worker.ps1').read_bytes(),
+            (ROOT / 'docs/deployment-2026-10-28/storage-job-manifest.json').read_bytes(), 'a' * 40)
+        self.assertNotIn(b'__MANIFEST_', source)
+        self.assertNotIn(b'__WORKER_', source)
+        self.assertGreater(len(base64.b64encode(source.decode().encode('utf-16-le'))), 32767)
+        self.assertLess(len(helpers['stdin_loader'](source)), 16000)
+
     def test_powershell_scripts_parse(self):
         for name in ['smal-storage-worker.ps1', 'start-smal-storage-job.ps1', 'read-smal-storage-job.ps1', 'inspect-smal-eval-media-access.ps1']:
             code = "$t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e); if($e.Count){$e | ForEach-Object Message; exit 1}"

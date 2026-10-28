@@ -1,7 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\storage-20261028-01'
 $taskName = 'LocalBox-Storage-20261028-01'
-$task = Get-ScheduledTask -TaskName $taskName
+$task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if (-not $task) {
+    @{ runId = 'storage-20261028-01'; scope = 'storage-only'; taskExists = $false; directoryExists = (Test-Path $root); startedMarkerExists = (Test-Path (Join-Path $root 'execution.started')); clusterBootstrapComplete = $false } | ConvertTo-Json -Compress
+    exit 0
+}
 $info = Get-ScheduledTaskInfo -TaskName $taskName
 $s = Get-Content (Join-Path $root 'state.json') -Raw | ConvertFrom-Json
 $heartbeat = if (Test-Path (Join-Path $root 'heartbeat.json')) { Get-Content (Join-Path $root 'heartbeat.json') -Raw | ConvertFrom-Json } else { $null }
