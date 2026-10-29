@@ -130,7 +130,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
     committed = subprocess.check_output(['git', 'show', 'HEAD:' + relative], cwd=ROOT)
     if committed != source:
         raise RuntimeError('Script differs from committed source')
-    if relative == 'scripts/seal-smal-platform-credentials.ps1':
+    if relative in ['scripts/seal-smal-platform-credentials.ps1','scripts/seal-smal-lcm-format-fix.ps1']:
         if (not isinstance(envelope_key, dict) or set(envelope_key) != {'modulus', 'nonce'}
                 or not re.fullmatch(r'[0-9a-f]{32}', envelope_key['nonce'])
                 or len(base64.b64decode(envelope_key['modulus'], validate=True)) != 512):
@@ -139,6 +139,10 @@ def main(script, name, envelope_key=None, three_node_context=None):
         if approval_bytes != subprocess.check_output(['git', 'show', 'HEAD:docs/deployment-2026-10-28/cloud-apply-approval.json'], cwd=ROOT): raise RuntimeError('Approval source differs')
         source = (source.decode().replace('__RSA_MODULUS__', envelope_key['modulus']).replace('__ENVELOPE_NONCE__', envelope_key['nonce'])
                   .replace('__APPROVAL_SHA256__', hashlib.sha256(approval_bytes).hexdigest().upper()).encode())
+        if relative == 'scripts/seal-smal-lcm-format-fix.ps1':
+            guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'),run_name='lcm_format_seal_approval')
+            guard['source_guard']([relative,'scripts/smal-private-powershell.py'])
+            source = source.decode().replace('__THREE_NODE_APPROVAL_SHA256__',hashlib.sha256((guard['OUT'] / 'three-node-approval.json').read_bytes()).hexdigest().upper()).encode()
     elif envelope_key is not None:
         raise RuntimeError('Envelope key is only accepted for approved credential sealing')
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()

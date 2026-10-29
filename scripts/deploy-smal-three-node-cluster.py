@@ -5,6 +5,7 @@ Shared Key/public access, reads a witness key, or treats ARM acceptance as servi
 validation success. Original two-node failures and receipts remain untouched.
 """
 import argparse
+import base64
 import contextlib
 from datetime import datetime, timezone
 import hashlib
@@ -79,6 +80,8 @@ def previous(stage):
     path = OUT / ('three-node-cluster-' + stage + '-receipt.json')
     reconciled = OUT / 'three-node-cluster-secrets-after-private-transport-reconciliation.json'
     if stage == 'secrets' and reconciled.exists(): path = reconciled
+    validation_retry = OUT / 'three-node-cluster-validate-after-lcm-format-fix-receipt.json'
+    if stage == 'validate' and validation_retry.exists(): path = validation_retry
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result
@@ -127,6 +130,14 @@ def service_passed(result):
     def good_steps(steps):
         return all(str(step.get('status','')).lower() in ['success','succeeded'] and step.get('exceptionCount',0) == 0 and good_steps(step.get('children',[])) for step in steps)
     return result.get('provisioningState') == 'Succeeded' and str(result.get('action',{}).get('status','')).lower() in ['success','succeeded'] and good_steps(result['action'].get('steps',[]))
+
+
+def normalise_lcm_parameters(parameters):
+    raw = base64.b64decode(parameters['domainCredential']['value'],validate=True)
+    qualified = b'LOCALBOX\\lboxdeploy:'; unqualified = b'lboxdeploy:'
+    if raw.startswith(qualified): raw = unqualified + raw[len(qualified):]
+    if not raw.startswith(unqualified) or len(raw) != len(unqualified) + 40: raise RuntimeError('Unexpected dedicated LCM username/credential format')
+    return {**parameters,'domainCredential':{'value':base64.b64encode(raw).decode()}}
 
 
 def verify_unsubmitted_secret_resume(prior,sealed_receipt_exists,template_hash):
@@ -188,7 +199,7 @@ def main(stage,wait_seconds=1200,resume_unsubmitted=False):
         preview = az(['deployment','group','what-if',*args,'--result-format','FullResourcePayloads','--no-pretty-print'],parameters,timeout=300)
         record['previewChanges'] = check_preview(stage,preview,owned,principal)
         record['templateSha256'] = hashlib.sha256((ROOT / TEMPLATES[stage]).read_bytes()).hexdigest()
-        if stage == 'secrets': parameters = L['secret_parameters']()
+        if stage == 'secrets': parameters = normalise_lcm_parameters(L['secret_parameters']())
         record['status'] = 'apply-pending'; save()
         az(['deployment','group','create',*args,'--no-wait'],parameters,timeout=180); parameters = None
         record['status'] = 'submitted-observe-before-continuing'; save(); deadline = time.monotonic() + wait_seconds

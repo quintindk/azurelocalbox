@@ -104,8 +104,11 @@ to replay an uncertain submitted resource operation or regenerate existing secre
 - These completed actions do **not** prove a deployed Windows/S2D cluster, bridge,
   custom location, service credential acceptance or final platform readiness.
 
-The service **Validate** stage is being observed separately. No Deploy is submitted
-unless current reported validation status and all reported steps positively pass.
+The first service **Validate** failed before Environment Checker initialization:
+the service requires an unqualified LCM username, while our encoder supplied a
+domain-qualified one. No Deploy was submitted. See the
+[exact diagnosis, one-secret correction and guarded initial-validation retry](initial-validation-lcm-format-recovery.md).
+No Deploy is submitted unless current reported validation and all steps positively pass.
 Final read-only Windows/storage and cloud-observation scripts are prepared without
 credential resets, service restarts, storage repairs or kubeconfig/secret export.
 

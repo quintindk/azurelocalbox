@@ -1,5 +1,6 @@
 """Offline exact three-node/no-witness platform effects and verified identities."""
 import copy
+import base64
 import json
 from pathlib import Path
 import runpy
@@ -10,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_validation_diagnostics_redact_credential_encodings_tokens_and_queries(self):
+        h = runpy.run_path(str(ROOT / 'scripts/diagnose-smal-three-node-validation.py'),run_name='diagnostic_redaction_test')
+        credential = 'A1!b' * 10
+        encoded = base64.b64encode(('LOCALBOX\\lboxdeploy:' + credential).encode()).decode()
+        text = 'Error Invoking Environment Checker. password="' + credential + '" encoded=' + encoded + ' access_token="short-sensitive-token" https://example.test/a?sig=shortSensitiveSignature enter code: ABC123XYZ'
+        safe = h['redact'](text)
+        for value in [credential,encoded,'short-sensitive-token','shortSensitiveSignature','ABC123XYZ']:
+            self.assertNotIn(value,safe)
+        self.assertIn('Environment Checker',safe)
+        self.assertIn('[REDACTED',safe)
+
     def test_published_secret_and_prerequisite_receipts_preserve_private_no_witness_boundary(self):
         out = ROOT / 'docs/deployment-2026-10-29'
         secrets = json.loads((out / 'three-node-cluster-secrets-after-private-transport-reconciliation.json').read_text())
@@ -71,7 +83,48 @@ class ThreeNodeDeploymentTests(unittest.TestCase):
         source = (ROOT / 'scripts/deploy-smal-three-node-cluster.py').read_text()
         self.assertNotIn("'storage','account','update'",source)
         self.assertNotIn("'storage', 'account', 'update'",source)
-        self.assertIn("parameters = L['secret_parameters']()",source)
+        self.assertIn("parameters = normalise_lcm_parameters(L['secret_parameters']())",source)
+
+    def test_lcm_normalisation_preserves_exact_password_and_local_admin_value(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='lcm_username_format_test')
+        synthetic = b'A1!b' * 10
+        parameters = {'localCredential':{'value':'untouched-synthetic-local-value'},'domainCredential':{'value':base64.b64encode(b'LOCALBOX\\lboxdeploy:' + synthetic).decode()}}
+        normalised = h['normalise_lcm_parameters'](parameters)
+        self.assertEqual(normalised['localCredential'],parameters['localCredential'])
+        self.assertEqual(base64.b64decode(normalised['domainCredential']['value']),b'lboxdeploy:' + synthetic)
+        self.assertEqual(h['normalise_lcm_parameters'](normalised),normalised)
+        bad = copy.deepcopy(parameters); bad['domainCredential']['value'] = base64.b64encode(b'other-user:' + synthetic).decode()
+        with self.assertRaises(RuntimeError): h['normalise_lcm_parameters'](bad)
+        path = ROOT / 'scripts/seal-smal-lcm-format-fix.ps1'
+        source = path.read_text()
+        self.assertIn("-Role 'deployment-user'",source)
+        self.assertNotIn("-Role 'cluster-node-admin'",source)
+        self.assertNotIn('Set-ADAccountPassword',source)
+        self.assertNotIn('WriteAllText',source)
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',code],check=True,capture_output=True,timeout=30)
+
+    def test_only_exact_terminal_initial_validation_error_can_be_retried(self):
+        h = runpy.run_path(str(ROOT / 'scripts/smal-validation-recovery.py'),run_name='validation_state_gate_test')
+        cluster = {'id':h['D']['CLUSTER'],'identity':{'principalId':'8c44672b-b729-4d3f-ad38-a0ac815ea265'},'properties':{'status':'ValidationFailed','provisioningState':'Succeeded'}}
+        settings = {'id':h['D']['SETTINGS'],'properties':{'deploymentMode':'Validate','provisioningState':'Failed','reportedProperties':{'validationStatus':{'status':'Error','steps':[{'exception':[h['ERROR']]}]},'deploymentStatus':{'status':None,'steps':[]}}}}
+        h['verify_initial_validation'](cluster,settings,[])
+        bad = copy.deepcopy(cluster); bad['properties']['status'] = 'DeploymentFailed'
+        with self.assertRaises(RuntimeError): h['verify_initial_validation'](bad,settings,[])
+        bad = copy.deepcopy(settings); bad['properties']['reportedProperties']['deploymentStatus']['status'] = 'InProgress'
+        with self.assertRaises(RuntimeError): h['verify_initial_validation'](cluster,bad,[])
+        with self.assertRaises(RuntimeError): h['verify_initial_validation'](cluster,settings,['deploy-exists'])
+
+    def test_initial_validation_retry_cannot_recreate_or_change_settings(self):
+        h = runpy.run_path(str(ROOT / 'scripts/retry-smal-initial-validation.py'),run_name='initial_validation_retry_preview_test')
+        properties = {'deploymentMode':'Validate','arcNodeResourceIds':['one','two','three'],'deploymentConfiguration':{'synthetic':'unchanged'}}
+        good = {'status':'Succeeded','changes':[{'resourceId':h['D']['SETTINGS'],'changeType':'NoChange','before':{'properties':properties},'after':{'properties':copy.deepcopy(properties)}}]}
+        h['validate_retry_preview'](good,set())
+        for kind in ['Create','Delete']:
+            bad = copy.deepcopy(good); bad['changes'][0]['changeType'] = kind
+            with self.assertRaises(RuntimeError): h['validate_retry_preview'](bad,set())
+        bad = copy.deepcopy(good); bad['changes'][0]['after']['properties']['deploymentMode'] = 'Deploy'
+        with self.assertRaises(RuntimeError): h['validate_retry_preview'](bad,set())
 
     def test_reported_service_success_is_required_not_just_arm_acceptance(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'), run_name='three_service_outcome_test')
