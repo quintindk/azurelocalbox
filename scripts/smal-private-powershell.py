@@ -389,6 +389,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,
                      'scripts/inspect-smal-three-node-live.ps1': 240,
                      'scripts/inspect-smal-three-node-final.ps1': 300,
+                     'scripts/inspect-smal-infra-network-failure.ps1': 240,
                      'scripts/stop-smal-guests-for-premium.ps1': 240,
                      'scripts/format-smal-node03-disk.ps1': 240,
                      'scripts/resize-smal-existing-nodes.ps1': 1500,

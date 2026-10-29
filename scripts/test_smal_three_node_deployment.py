@@ -11,6 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_infrastructure_network_diagnostic_is_read_only_and_parses(self):
+        path = ROOT / 'scripts/inspect-smal-infra-network-failure.ps1'
+        source = path.read_text()
+        for forbidden in ['New-NetIPAddress','New-NetFirewallRule','Set-NetFirewall','Set-VMNetwork','Remove-Net','Restart-','Clear-Disk']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn('Get-NetFirewallPortFilter -PolicyStore ActiveStore',source)
+        self.assertIn('mutationPerformed = $false',source)
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',code],check=True,capture_output=True,timeout=30)
     def test_corrected_validation_observer_requires_exact_retained_pending_request(self):
         h = runpy.run_path(str(ROOT / 'scripts/observe-smal-corrected-validation.py'),run_name='validation_observer_test')
         prior = json.loads((ROOT / h['ORIGINAL']).read_text())

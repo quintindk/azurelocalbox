@@ -104,6 +104,25 @@ and writes a separate observation receipt. It cannot submit Validate or Deploy.
 The timeout receipt remains intact. Deploy stays blocked until both ARM and the
 reported service validation positively succeed for the same template hash.
 
+## Corrected validation failed at infrastructure networking
+
+At **16:01 SAST on 29 October 2026**, the same corrected-validation ARM request
+reported Failed and the service reported Error at **Azure Local Network Infra
+Connection**. The first six checks remain Success. The cluster status remains
+**ValidationFailed**, not DeploymentFailed. No Deploy has been submitted.
+
+The redacted service diagnostic reports that temporary infrastructure-pool addresses,
+including **10.64.0.20–10.64.0.25** on NODE1, could not reach gateway **10.64.0.1**
+or be configured correctly on the test adapter. This identifies the failed test,
+not yet its root cause. Gateway ICMP filtering, test-adapter configuration and
+nested-switch forwarding require inspection before choosing a remediation.
+
+The original corrected-validation timeout receipt and the final read-only observation
+are retained separately. No validation retry is authorised by these diagnostics.
+`scripts/inspect-smal-infra-network-failure.ps1` collects existing host/guest networking,
+effective gateway ICMP rules and source-bound echo probes without changing networking
+or disabling firewalls.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).
