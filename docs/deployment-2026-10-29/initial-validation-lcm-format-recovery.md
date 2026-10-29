@@ -160,6 +160,30 @@ ValidationFailed/non-deployment distinction is independently reconfirmed.
 Reference: [New-NetFirewallRule protocol, ICMP and address/interface filters](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule?view=windowsserver2025-ps).
 Private evidence: `../deployment-2026-10-27/private-ssh-infra-network-failure-20261029.json`.
 
+## Human-approved rule applied and verified
+
+The owner selected **Approve scoped echo rule**, authorising exactly the proposed
+rule and continuation after verified connectivity and validation gates. The approval
+is retained in `gateway-echo-rule-approval.json`.
+
+At **16:14 SAST**, the exact rule was created and independently inspected in both
+PersistentStore and ActiveStore. All source ranges, destination, interface, protocol
+and echo type matched the approval. Existing rule identities were preserved. No
+firewall profile, outer/shared network or Azure resource was changed.
+
+Fresh source-bound probes on **all three nodes now succeed to both 10.64.0.1 and
+10.64.0.10**. This verifies the gateway echo correction for existing node addresses.
+It does not claim that the service's temporary infrastructure-pool adapter test has
+passed. That remains gated on a real service validation result.
+
+Evidence: `gateway-echo-rule-receipt.json` and private before/after transport receipts.
+The `--after-gateway-echo-fix` retry option requires this committed correction, the
+specific human continuation approval, the exact terminal network error and unchanged
+settings hash. It repeats fresh read-only rule/echo/node/storage/AD checks before
+one existing-settings-only Validate request under a new retained attempt identity.
+No secrets, roles, cluster, edges or licences are reapplied. There is no automatic
+retry if this attempt fails, and Deploy still requires positive service success.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

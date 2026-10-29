@@ -5,8 +5,10 @@ deploymentSettings resource via its documented CreateOrUpdate operation. Does no
 reapply cluster, edges, identities, roles, secrets, licences or storage.
 """
 import argparse
+import contextlib
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 from pathlib import Path
 import runpy
@@ -38,17 +40,50 @@ def validate_retry_preview(preview,owned):
     return seen
 
 
-def main(wait_seconds=1800):
-    head = D['A']['source_guard'](['scripts/retry-smal-initial-validation.py','scripts/smal-validation-recovery.py','scripts/deploy-smal-three-node-cluster.py',
+def verify_echo_recovery(fix,proof):
+    if fix.get('status') != 'complete-scoped-rule-and-three-node-echo-verified' or fix.get('gatewayAndDcEchoVerifiedOnAllThreeNodes') is not True:
+        raise RuntimeError('Verified approved gateway echo correction missing')
+    if proof.get('status') != 'complete' or proof.get('result',{}).get('mutationPerformed') is not False:
+        raise RuntimeError('Complete read-only current gateway echo proof required')
+    data = proof['result']; nodes = data.get('nodes',[])
+    if len(nodes) != 3 or {row['name'] for row in nodes} != set(D['P']['NODES']): raise RuntimeError('Exact three-node network probe set differs')
+    for node in nodes:
+        if {row['destination']:row['echoReplyReceived'] for row in node['guest']['probes']} != {'10.64.0.1':True,'10.64.0.10':True}:
+            raise RuntimeError('Current gateway/DC echoes did not pass on all three nodes')
+    rules = [row for row in data.get('hostIcmpInboundRules',[]) if row['name'] == 'AzureLocalBox-InternalGateway-Echo-v4']
+    if len(rules) != 1: raise RuntimeError('Exact scoped effective gateway echo rule missing')
+    rule = rules[0]
+    if (rule.get('enabled') != 'True' or rule.get('action') != 'Allow' or rule.get('protocol') != 'ICMPv4'
+            or rule.get('icmpType') != ['8'] or rule.get('localAddress') != ['10.64.0.1']
+            or set(rule.get('remoteAddress',[])) != {'10.64.0.11-10.64.0.13','10.64.0.20-10.64.0.30'}
+            or rule.get('interfaceAlias') != ['vEthernet (LB-Fabric)']):
+        raise RuntimeError('Current gateway echo rule scope drifted')
+
+
+def main(wait_seconds=1800,gateway_echo=False):
+    paths = ['scripts/retry-smal-initial-validation.py','scripts/smal-validation-recovery.py','scripts/deploy-smal-three-node-cluster.py',
         'infra/arm/localbox-three-node-settings.json','docs/deployment-2026-10-29/three-node-cluster-validate-receipt.json',
-        'docs/deployment-2026-10-29/lcm-credential-format-correction-receipt.json'])
-    path = OUT / 'three-node-cluster-validate-after-lcm-format-fix-receipt.json'
+        'docs/deployment-2026-10-29/lcm-credential-format-correction-receipt.json']
+    action = ACTION; filename = 'three-node-cluster-validate-after-lcm-format-fix-receipt.json'
+    expected_error = REC['ERROR']
+    if gateway_echo:
+        paths += ['docs/deployment-2026-10-29/gateway-echo-rule-approval.json','docs/deployment-2026-10-29/gateway-echo-rule-receipt.json',
+                  'docs/deployment-2026-10-29/three-node-corrected-validation-observation.json','scripts/inspect-smal-infra-network-failure.ps1','scripts/smal-private-powershell.py']
+        action = 'localbox-three-node-validate-gateway-echo-20261029'; filename = 'three-node-cluster-validate-after-gateway-echo-receipt.json'
+        expected_error = REC['NETWORK_ERROR']
+    head = D['A']['source_guard'](paths)
+    path = OUT / filename
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'status':'pending','stage':'validate',
-              'deploymentName':ACTION,'initialValidationOnly':True,'deploySubmitted':False,'clusterReapplied':False,'rolesOrSecretsReapplied':False,'platformReadinessVerified':False}
+              'deploymentName':action,'initialValidationOnly':True,'deploySubmitted':False,'clusterReapplied':False,'rolesOrSecretsReapplied':False,'platformReadinessVerified':False}
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
     try:
-        D['preflight'](); record['terminalInitialValidationProof'] = REC['current_failure']()
+        D['preflight'](); record['terminalInitialValidationProof'] = REC['current_failure'](expected_error)
+        if gateway_echo:
+            approval = json.loads((OUT / 'gateway-echo-rule-approval.json').read_text())
+            if approval.get('approved') is not True or approval.get('continueApprovedDeploymentAfterVerifiedConnectivityAndValidationGates') is not True: raise RuntimeError('Gateway correction/continuation approval missing')
+            failed = json.loads((OUT / 'three-node-corrected-validation-observation.json').read_text())
+            if failed.get('deploymentState') != 'Failed' or failed.get('deploySubmitted') is not False or failed.get('templateSha256') != hashlib.sha256((ROOT / D['TEMPLATES']['validate']).read_bytes()).hexdigest(): raise RuntimeError('Prior terminal network validation/configuration proof differs')
         original_path = OUT / 'three-node-cluster-validate-receipt.json'; original = json.loads(original_path.read_text())
         current_hash = hashlib.sha256((ROOT / D['TEMPLATES']['validate']).read_bytes()).hexdigest()
         if original.get('stage') != 'validate' or original.get('deploymentState') != 'Failed' or original.get('templateSha256') != current_hash: raise RuntimeError('Original failed validation/settings hash does not match exactly')
@@ -56,22 +91,28 @@ def main(wait_seconds=1800):
         if fix.get('status') != 'complete-one-lcm-username-format-version-only' or fix.get('unqualifiedCredentialReadbackMatched') is not True or fix.get('passwordRotated') is not False: raise RuntimeError('Exact successful username-only secret correction proof missing')
         current_secret = D['az'](['keyvault','secret','show','--subscription',D['SUB'],'--vault-name','kv-lbox-weu-4766ea','--name',D['NAME'] + '-AzureStackLCMUserCredential','--query','{id:id,enabled:attributes.enabled}'])
         if current_secret != {'id':fix['newVersionId'],'enabled':True}: raise RuntimeError('Corrected LCM secret latest metadata differs')
-        if D['az'](['deployment','group','list','--subscription',D['SUB'],'-g',D['RG'],'--query',"[?name=='" + ACTION + "'].name"]): raise RuntimeError('Retry deployment identity already exists. Inspect, never repeat.')
-        record['privateInputsReceipt'] = D['inspect_inputs']('validate-lcm-format-fix')
+        if D['az'](['deployment','group','list','--subscription',D['SUB'],'-g',D['RG'],'--query',"[?name=='" + action + "'].name"]): raise RuntimeError('Retry deployment identity already exists. Inspect, never repeat.')
+        record['privateInputsReceipt'] = D['inspect_inputs']('validate-gateway-echo-fix' if gateway_echo else 'validate-lcm-format-fix')
+        if gateway_echo:
+            with contextlib.redirect_stdout(io.StringIO()): code = D['T']['main']('scripts/inspect-smal-infra-network-failure.ps1','infra-network-before-validation-retry-20261029')
+            network_path = D['T']['OUT'] / 'private-ssh-infra-network-before-validation-retry-20261029.json'
+            if code != 0: raise RuntimeError('Current pre-retry network inspection failed')
+            verify_echo_recovery(json.loads((OUT / 'gateway-echo-rule-receipt.json').read_text()),json.loads(network_path.read_text()))
+            record['currentGatewayEchoProof'] = str(network_path.relative_to(ROOT))
         record['originalFailedReceiptSha256'] = hashlib.sha256(original_path.read_bytes()).hexdigest(); record['templateSha256'] = current_hash
         record['correctedLcmVersionId'] = fix['newVersionId']
         owned = {rid.lower() for rid in D['az'](['resource','list','--subscription',D['SUB'],'-g',D['RG'],'--query','[].id'])} | {row['id'].lower() for row in D['R']['assignments']()}
-        args = ['--subscription',D['SUB'],'-g',D['RG'],'-n',ACTION,'--template-file',str(ROOT / D['TEMPLATES']['validate']),'--parameters','@-']
+        args = ['--subscription',D['SUB'],'-g',D['RG'],'-n',action,'--template-file',str(ROOT / D['TEMPLATES']['validate']),'--parameters','@-']
         parameters = {'deploymentMode':{'value':'Validate'}}
         preview = D['az'](['deployment','group','what-if',*args,'--result-format','FullResourcePayloads','--no-pretty-print'],parameters,timeout=300)
         record['previewChanges'] = validate_retry_preview(preview,owned)
         # Recheck terminal/non-deployment state immediately before the single PUT.
-        REC['current_failure']()
+        REC['current_failure'](expected_error)
         record['status'] = 'existing-settings-validation-retry-pending'; save()
         D['az'](['deployment','group','create',*args,'--no-wait'],parameters,timeout=180)
         record['status'] = 'submitted-observe-before-deploy'; save(); deadline = time.monotonic() + wait_seconds
         while True:
-            arm = D['az'](['deployment','group','show','--subscription',D['SUB'],'-g',D['RG'],'-n',ACTION,'--query','{id:id,state:properties.provisioningState,code:properties.error.code}'])
+            arm = D['az'](['deployment','group','show','--subscription',D['SUB'],'-g',D['RG'],'-n',action,'--query','{id:id,state:properties.provisioningState,code:properties.error.code}'])
             record['deploymentId'] = arm['id']; record['deploymentState'] = arm['state']; record['deploymentErrorCode'] = arm.get('code'); save()
             if arm['state'] in ['Failed','Canceled']: raise RuntimeError('Corrected initial validation failed. Preserve this attempt; no automatic retry or Deploy.')
             if arm['state'] == 'Succeeded':
@@ -90,6 +131,7 @@ def main(wait_seconds=1800):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('--wait-seconds',type=int,default=1800); args = parser.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('--wait-seconds',type=int,default=1800)
+    parser.add_argument('--after-gateway-echo-fix',action='store_true'); args = parser.parse_args()
     if not 60 <= args.wait_seconds <= 7200: parser.error('wait bound must be 60–7200 seconds')
-    raise SystemExit(main(args.wait_seconds))
+    raise SystemExit(main(args.wait_seconds,args.after_gateway_echo_fix))

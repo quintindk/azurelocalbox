@@ -84,6 +84,8 @@ def previous(stage):
     if stage == 'validate' and validation_retry.exists(): path = validation_retry
     validation_observation = OUT / 'three-node-corrected-validation-observation.json'
     if stage == 'validate' and validation_retry.exists() and validation_observation.exists(): path = validation_observation
+    gateway_retry = OUT / 'three-node-cluster-validate-after-gateway-echo-receipt.json'
+    if stage == 'validate' and gateway_retry.exists(): path = gateway_retry
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result

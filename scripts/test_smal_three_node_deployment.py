@@ -11,6 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_gateway_retry_requires_successful_probes_and_exact_effective_rule(self):
+        h = runpy.run_path(str(ROOT / 'scripts/retry-smal-initial-validation.py'),run_name='gateway_retry_guard_test')
+        fix = json.loads((ROOT / 'docs/deployment-2026-10-29/gateway-echo-rule-receipt.json').read_text())
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-infra-network-after-echo-rule-20261029.json').read_text())
+        h['verify_echo_recovery'](fix,proof)
+        bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['probes'][0]['echoReplyReceived'] = False
+        with self.assertRaises(RuntimeError): h['verify_echo_recovery'](fix,bad)
+        for field,value in [('remoteAddress',['Any']),('localAddress',['Any']),('interfaceAlias',['Any']),('icmpType',['Any'])]:
+            bad = copy.deepcopy(proof)
+            rule = next(row for row in bad['result']['hostIcmpInboundRules'] if row['name'] == 'AzureLocalBox-InternalGateway-Echo-v4')
+            rule[field] = value
+            with self.assertRaises(RuntimeError): h['verify_echo_recovery'](fix,bad)
+        recovery = runpy.run_path(str(ROOT / 'scripts/smal-validation-recovery.py'),run_name='network_error_guard_test')
+        cluster = {'id':recovery['D']['CLUSTER'],'identity':{'principalId':'8c44672b-b729-4d3f-ad38-a0ac815ea265'},'properties':{'status':'ValidationFailed','provisioningState':'Succeeded'}}
+        settings = {'id':recovery['D']['SETTINGS'],'properties':{'deploymentMode':'Validate','provisioningState':'Failed','reportedProperties':{'validationStatus':{'status':'Error','steps':[{'exception':[recovery['NETWORK_ERROR']]}]}}}}
+        recovery['verify_initial_validation'](cluster,settings,[],recovery['NETWORK_ERROR'])
+        with self.assertRaises(RuntimeError): recovery['verify_initial_validation'](cluster,settings,[])
+        cluster['properties']['status'] = 'DeploymentFailed'
+        with self.assertRaises(RuntimeError): recovery['verify_initial_validation'](cluster,settings,[],recovery['NETWORK_ERROR'])
+
     def test_gateway_echo_rule_has_exact_human_scope_and_no_existing_rule_changes(self):
         approval = json.loads((ROOT / 'docs/deployment-2026-10-29/gateway-echo-rule-approval.json').read_text())
         self.assertTrue(approval['approved'])
