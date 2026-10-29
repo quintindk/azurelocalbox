@@ -123,6 +123,43 @@ are retained separately. No validation retry is authorised by these diagnostics.
 effective gateway ICMP rules and source-bound echo probes without changing networking
 or disabling firewalls.
 
+## Gateway echo diagnosis and proposed narrow correction
+
+The private inspection at **16:05 SAST** verified all three nodes retain their
+expected management addresses, default route through **10.64.0.1** and reachable
+gateway MAC **00-15-5D-10-04-00**. Source-bound echo probes from **10.64.0.11–13**
+all failed to the gateway and all succeeded to DC **10.64.0.10**. The host retains
+the intended internal gateway address, LB-NAT and outer default route.
+
+All effective host inbound IPv4 echo-request allow rules are disabled. The enabled
+ICMP rule permits only destination-unreachable/fragmentation-needed, not echo.
+This establishes an existing gateway echo failure independently of temporary test
+adapter configuration. A scoped rule and successful follow-up probes are required
+before claiming the infrastructure-pool test is repaired.
+
+Proposed new **host-local** rule, not yet applied:
+
+```powershell
+New-NetFirewallRule -Name 'AzureLocalBox-InternalGateway-Echo-v4' `
+  -DisplayName 'AzureLocalBox internal gateway echo' `
+  -Direction Inbound -Action Allow -Enabled True -Profile Any `
+  -Protocol ICMPv4 -IcmpType 8 `
+  -InterfaceAlias 'vEthernet (LB-Fabric)' -LocalAddress '10.64.0.1' `
+  -RemoteAddress '10.64.0.11-10.64.0.13','10.64.0.20-10.64.0.30'
+```
+
+This is a new inbound permission, so it awaits specific human approval. No existing
+rule is enabled or widened. No outer-interface, Azure networking, NSG, shared
+landing-zone, vault/storage access or firewall-profile change is proposed. The
+three existing node IPs and the exact approved infrastructure pool are the only
+sources. A guarded implementation must check ownership, refuse conflicting rules,
+read back every scope filter and avoid duplicate creation. Validation must not be
+retried until the correction and network probes pass and the same terminal
+ValidationFailed/non-deployment distinction is independently reconfirmed.
+
+Reference: [New-NetFirewallRule protocol, ICMP and address/interface filters](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule?view=windowsserver2025-ps).
+Private evidence: `../deployment-2026-10-27/private-ssh-infra-network-failure-20261029.json`.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

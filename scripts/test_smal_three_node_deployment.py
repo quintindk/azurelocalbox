@@ -11,6 +11,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_gateway_failure_proof_distinguishes_echo_from_layer_two_connectivity(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-infra-network-failure-20261029.json').read_text())
+        self.assertEqual(proof['status'],'complete')
+        data = proof['result']; self.assertFalse(data['mutationPerformed'])
+        self.assertEqual(len(data['nodes']),3)
+        for node in data['nodes']:
+            probes = {row['destination']:row['echoReplyReceived'] for row in node['guest']['probes']}
+            self.assertEqual(probes,{'10.64.0.1':False,'10.64.0.10':True})
+            gateway = [row for row in node['guest']['neighbors'] if row['IPAddress'] == '10.64.0.1']
+            self.assertEqual(len(gateway),1)
+            self.assertEqual(gateway[0]['LinkLayerAddress'],'00-15-5D-10-04-00')
+        echo = [rule for rule in data['hostIcmpInboundRules'] if '8' in rule['icmpType']]
+        self.assertTrue(echo)
+        self.assertTrue(all(rule['enabled'] == 'False' for rule in echo))
     def test_infrastructure_network_diagnostic_is_read_only_and_parses(self):
         path = ROOT / 'scripts/inspect-smal-infra-network-failure.ps1'
         source = path.read_text()
