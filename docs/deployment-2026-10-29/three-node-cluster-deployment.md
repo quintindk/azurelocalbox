@@ -87,3 +87,30 @@ before-sealing failure, unchanged template hash, no sealing receipt, no existing
 deployment and no active/deleted target secret identities. It keeps the original
 deployment name and writes a separate reconciliation receipt. This is not permission
 to replay an uncertain submitted resource operation or regenerate existing secrets.
+
+## Credentials and prerequisites completed
+
+- The reconciled **two-secret** deployment succeeded at **13:53 SAST**. Both
+  dedicated credentials are enabled, only their metadata is retained in receipts,
+  and vault public access remained **Disabled**. The actual host credential
+  transport used the reviewed RSA4096-OAEP-SHA256 envelope. No witness key was read
+  or uploaded. Original pre-submit failure receipts remain unchanged.
+- At **14:03 SAST**, ARM creation and independent GETs verified the owned
+  **smal-localbox01** cluster shell and all **three HCI edge devices** Succeeded.
+- Actual inspected cluster principal:
+  **8c44672b-b729-4d3f-ad38-a0ac815ea265**. Its only newly requested role was
+  **Key Vault Secrets User**, only at the dedicated vault. That grant and its
+  ServicePrincipal type/scope were read back at **14:06 SAST**.
+- These completed actions do **not** prove a deployed Windows/S2D cluster, bridge,
+  custom location, service credential acceptance or final platform readiness.
+
+The service **Validate** stage is being observed separately. No Deploy is submitted
+unless current reported validation status and all reported steps positively pass.
+Final read-only Windows/storage and cloud-observation scripts are prepared without
+credential resets, service restarts, storage repairs or kubeconfig/secret export.
+
+Receipts:
+
+- `three-node-cluster-secrets-after-private-transport-reconciliation.json`.
+- `three-node-cluster-prerequisites-receipt.json`.
+- `three-node-cluster-cluster-role-receipt.json`.

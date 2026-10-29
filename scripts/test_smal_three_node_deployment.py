@@ -10,6 +10,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_published_secret_and_prerequisite_receipts_preserve_private_no_witness_boundary(self):
+        out = ROOT / 'docs/deployment-2026-10-29'
+        secrets = json.loads((out / 'three-node-cluster-secrets-after-private-transport-reconciliation.json').read_text())
+        self.assertEqual(secrets['status'],'complete')
+        self.assertEqual(secrets['deploymentState'],'Succeeded')
+        self.assertEqual(len(secrets['secretMetadata']),2)
+        self.assertTrue(all(row['enabled'] for row in secrets['secretMetadata']))
+        self.assertEqual(secrets['vaultPublicAccessAfter'],'Disabled')
+        self.assertFalse(secrets['witnessKeyReadOrUpload'])
+        self.assertTrue(secrets['originalPreSubmitRefusalRetained'])
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-sealed-platform-credentials-20261029.json').read_text())
+        self.assertEqual(proof['status'],'complete')
+        self.assertEqual(proof['result']['scheme'],'RSA4096-OAEP-SHA256')
+        self.assertFalse(proof['result']['clearValuesExported'])
+        prereq = json.loads((out / 'three-node-cluster-prerequisites-receipt.json').read_text())
+        role = json.loads((out / 'three-node-cluster-cluster-role-receipt.json').read_text())
+        self.assertEqual(prereq['status'],'complete')
+        self.assertEqual(len(prereq['previewChanges']),4)
+        self.assertEqual(len(prereq['edgeDevices']),3)
+        self.assertTrue(all(row['provisioningState'] == 'Succeeded' for row in prereq['edgeDevices']))
+        self.assertEqual(prereq['clusterReadback']['identity']['principalId'],role['inspectedClusterIdentity']['principalId'])
+        self.assertEqual(role['status'],'complete')
+        self.assertEqual(role['clusterVaultRole']['principalId'],prereq['clusterReadback']['identity']['principalId'])
+        self.assertTrue(role['clusterVaultRole']['scope'].lower().endswith('/providers/microsoft.keyvault/vaults/kv-lbox-weu-4766ea'))
+        self.assertFalse(role['platformReadinessVerified'])
+
+    def test_final_windows_observer_parses_and_cannot_repair_or_reset_anything(self):
+        path = ROOT / 'scripts/inspect-smal-three-node-final.ps1'
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',code],check=True,capture_output=True,timeout=30)
+        source = path.read_text()
+        for forbidden in ['Format-Volume','Clear-Disk','Set-LocalUser','Set-Cluster','Start-VM','Restart-Service','Get-AzAccessToken','Invoke-AzStackHciArcInitialization']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn('credentialsReset = $false',source)
+        self.assertIn('Get-ClusterQuorum',source)
+
     def test_secret_transport_resume_requires_proven_before_sealing_and_no_submission(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='pre_submit_resume_test')
         prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-secrets-receipt.json').read_text())
