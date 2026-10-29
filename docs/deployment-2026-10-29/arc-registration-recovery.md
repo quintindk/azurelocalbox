@@ -1,5 +1,29 @@
 # NODE2 Arc registration: confirmed authorisation failure
 
+## Recovery verified, 09:14 SAST on 29 October
+
+Both local bootstrap statuses are now **Succeeded**, independently inspected
+through private PowerShell Direct. Both Azure Arc machines are **Connected**, with
+provisioning **Succeeded**, region **westeurope**, OS **10.0.26100.33650** and agent
+**1.67.03504.3207**. The NODE2 recovery succeeded. Do not retry registration again.
+
+| Node | System-assigned principal |
+|---|---|
+| LB-NODE01 | `9a1205c8-6ac3-4d02-ad6d-6166827c8d9d` |
+| LB-NODE02 | `b282b136-716d-4fa9-8e03-a4c754249a5e` |
+
+Latest local proof:
+`../deployment-2026-10-27/private-ssh-arc-registration-after-recovery-20261029.json`.
+NODE2's retained agent log still contains yesterday's authorisation failures. They
+are historical evidence, not the current bootstrap status.
+
+The next approved effects are seven exact role bindings: one existing first-party
+Azure Local RP grant and four node grants at the dedicated platform RG, plus two
+node Secrets User grants at the dedicated private vault. No cluster identity is
+guessed. Its later vault role must wait for actual resource/identity inspection.
+The role-only template does not create cluster/deployment settings or alter vault
+public access. Full platform readiness remains false.
+
 ## Diagnosis
 
 The read-only private inspection on 29 October 2026 confirmed:
