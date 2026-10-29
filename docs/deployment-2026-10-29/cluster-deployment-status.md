@@ -80,3 +80,18 @@ authentication constraint. Policy-compliant options need a reviewed design chang
 
 No additional VM, file share, domain permission, account configuration, service
 Validate resource or cluster/storage deployment was created as a workaround.
+
+## Fail-closed execution verified
+
+At **09:35 SAST**, the prepared `secrets` stage refused to proceed at its witness
+preflight, before sealing credentials, requesting what-if, or submitting an ARM
+deployment. Receipt: `cluster-secrets-receipt.json`. A subsequent independent
+resource list contained no Azure Local cluster/edge/deployment-settings resource,
+and the vault's active secret-name list remained empty. The owned RG also contains
+an MDE extension on NODE1 and two Event Grid system topics associated with the
+storage accounts. This cluster stage did not request those resources and did not
+change or delete them.
+
+The regression suite passed **191 tests**, including exact VHD/guest disk mapping,
+policy refusal, bounded effect previews and synthetic RSA-OAEP interoperability.
+Consequential source and the retained blocker/evidence are committed and pushed.
