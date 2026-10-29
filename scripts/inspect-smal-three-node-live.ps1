@@ -47,6 +47,19 @@ $nodes = @(foreach ($target in $targets) {
            hostDisks = @(Get-VMHardDiskDrive -VM $vm | ForEach-Object { $vhd = Get-VHD -Path $_.Path; @{ path = $_.Path; lun = $_.ControllerLocation; diskId = $vhd.DiskIdentifier.ToString(); size = $vhd.Size; parentPath = $vhd.ParentPath } }); guest = $guest }
     } finally { if ($session) { Remove-PSSession $session }; $secure.Dispose() }
 })
-@{ atUtc = [datetime]::UtcNow.ToString('o'); nodes = $nodes; guests = @(Get-VM | ForEach-Object { @{ name = $_.Name; id = $_.Id.ToString(); state = $_.State.ToString(); memoryBytes = $_.MemoryStartup; processors = $_.ProcessorCount } });
+$dc = Get-VM -Id 'f94c71f1-6854-48b9-a9f1-8238c99366d0'
+if ($dc.Name -cne 'LB-DC01' -or $dc.State.ToString() -ne 'Running') { throw 'Exact DC differs' }
+$secure = Read-LabGuestSecureSecret -SecretDirectory 'C:\ProgramData\AzureLocalBox\Bootstrap\local-guests-20261028-01\secrets' -Role 'dc-admin'; $session = $null
+try {
+    $session = New-PSSession -VMId $dc.Id -Credential ([pscredential]::new('LOCALBOX\Administrator', $secure)) -ErrorAction Stop
+    $ad = Invoke-Command -Session $session -ScriptBlock {
+        Import-Module ActiveDirectory; Import-Module GroupPolicy
+        $ou = 'OU=SMAL01,OU=AzureLocal,DC=ad,DC=localbox,DC=test'
+        $user = Get-ADUser lboxdeploy -Properties PasswordExpired,PasswordNeverExpires,MemberOf
+        @{ domain = (Get-ADDomain).DNSRoot; ou = (Get-ADOrganizationalUnit -Identity $ou).DistinguishedName; inheritanceBlocked = (Get-GPInheritance -Target $ou).GpoInheritanceBlocked;
+           lcm = @{ user = $user.SamAccountName; enabled = $user.Enabled; expired = $user.PasswordExpired; neverExpires = $user.PasswordNeverExpires; groupCount = @($user.MemberOf).Count } }
+    } -ErrorAction Stop
+} finally { if ($session) { Remove-PSSession $session }; $secure.Dispose() }
+@{ atUtc = [datetime]::UtcNow.ToString('o'); nodes = $nodes; ad = $ad; guests = @(Get-VM | ForEach-Object { @{ name = $_.Name; id = $_.Id.ToString(); state = $_.State.ToString(); memoryBytes = $_.MemoryStartup; processors = $_.ProcessorCount } });
    volumes = @(Get-Volume | Where-Object DriveLetter -In @('C','V','W') | ForEach-Object { @{ letter = [string]$_.DriveLetter; size = $_.Size; free = $_.SizeRemaining; health = $_.HealthStatus.ToString(); uniqueId = $_.UniqueId } });
    mutationPerformed = $false; registrationInvoked = $false; platformReadinessVerified = $false } | ConvertTo-Json -Depth 13 -Compress
