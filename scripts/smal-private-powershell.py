@@ -97,7 +97,7 @@ def render_arc_console(installer, console, approval, commit):
             .replace('__APPROVAL_SHA256__', approval_hash).replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
-def main(script, name):
+def main(script, name, envelope_key=None):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
     target = OUT / f'private-ssh-{name}.json'
@@ -117,6 +117,17 @@ def main(script, name):
     committed = subprocess.check_output(['git', 'show', 'HEAD:' + relative], cwd=ROOT)
     if committed != source:
         raise RuntimeError('Script differs from committed source')
+    if relative == 'scripts/seal-smal-platform-credentials.ps1':
+        if (not isinstance(envelope_key, dict) or set(envelope_key) != {'modulus', 'nonce'}
+                or not re.fullmatch(r'[0-9a-f]{32}', envelope_key['nonce'])
+                or len(base64.b64decode(envelope_key['modulus'], validate=True)) != 512):
+            raise RuntimeError('One-use RSA4096 public key and nonce required')
+        approval_bytes = (ROOT / 'docs/deployment-2026-10-28/cloud-apply-approval.json').read_bytes()
+        if approval_bytes != subprocess.check_output(['git', 'show', 'HEAD:docs/deployment-2026-10-28/cloud-apply-approval.json'], cwd=ROOT): raise RuntimeError('Approval source differs')
+        source = (source.decode().replace('__RSA_MODULUS__', envelope_key['modulus']).replace('__ENVELOPE_NONCE__', envelope_key['nonce'])
+                  .replace('__APPROVAL_SHA256__', hashlib.sha256(approval_bytes).hexdigest().upper()).encode())
+    elif envelope_key is not None:
+        raise RuntimeError('Envelope key is only accepted for approved credential sealing')
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     branch = subprocess.check_output(['git', 'branch', '--show-current'], cwd=ROOT, text=True).strip()
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
@@ -326,6 +337,7 @@ def main(script, name):
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
+                     'scripts/inspect-smal-cluster-inputs.ps1': 240,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
                      'scripts/activate-smal-dc-evaluation.ps1': 300,
                      'scripts/prepare-smal-cluster-prereqs.ps1': 600,
