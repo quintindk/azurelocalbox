@@ -5,8 +5,10 @@ Shared Key/public access, reads a witness key, or treats ARM acceptance as servi
 validation success. Original two-node failures and receipts remain untouched.
 """
 import argparse
+import contextlib
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 from pathlib import Path
 import runpy
@@ -55,21 +57,29 @@ def preflight():
     if any(row['principalType'] != 'ServicePrincipal' for row in roles if R['binding'](row) in P['ALL_EXPECTED']): raise RuntimeError('Platform role principal type differs')
     addresses = {row[4][0] for row in socket.getaddrinfo('kv-lbox-weu-4766ea.vault.azure.net',443,family=socket.AF_INET)}
     if addresses != {'10.200.17.11'}: raise RuntimeError('Vault private DNS differs')
+    for endpoint in [('10.204.0.4',53),('10.200.17.11',443)]:
+        try:
+            with socket.create_connection(endpoint,timeout=5): pass
+        except OSError: raise RuntimeError('Actual private VPN TCP reachability failed before any stage action. Active profile/route alone is insufficient.') from None
     vault = az(['keyvault','show','--subscription',SUB,'-n','kv-lbox-weu-4766ea','--query','{id:id,pna:properties.publicNetworkAccess,rbac:properties.enableRbacAuthorization}'])
     if vault['id'].lower() != VAULT.lower() or vault['pna'] != 'Disabled' or vault['rbac'] is not True: raise RuntimeError('Expected private RBAC vault differs')
 
 
 def inspect_inputs(stage):
     name = 'three-cluster-inputs-' + stage + '-20261029'
-    code = T['main']('scripts/inspect-smal-three-node-live.ps1',name)
+    with contextlib.redirect_stdout(io.StringIO()): code = T['main']('scripts/inspect-smal-three-node-live.ps1',name)
     path = T['OUT'] / ('private-ssh-' + name + '.json'); proof = json.loads(path.read_text())
     if code != 0: raise RuntimeError('Private current three-node input inspection failed')
     P['verify_local'](proof,require_ad=True)
+    print(json.dumps({'privateInspection':'passed','receipt':str(path.relative_to(ROOT))}),flush=True)
     return str(path.relative_to(ROOT))
 
 
 def previous(stage):
-    result = json.loads((OUT / ('three-node-cluster-' + stage + '-receipt.json')).read_text())
+    path = OUT / ('three-node-cluster-' + stage + '-receipt.json')
+    reconciled = OUT / 'three-node-cluster-secrets-after-private-transport-reconciliation.json'
+    if stage == 'secrets' and reconciled.exists(): path = reconciled
+    result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result
 
@@ -119,10 +129,26 @@ def service_passed(result):
     return result.get('provisioningState') == 'Succeeded' and str(result.get('action',{}).get('status','')).lower() in ['success','succeeded'] and good_steps(result['action'].get('steps',[]))
 
 
-def main(stage,wait_seconds=1200):
+def verify_unsubmitted_secret_resume(prior,sealed_receipt_exists,template_hash):
+    if (prior.get('stage') != 'secrets' or prior.get('status') != 'uncertain-or-still-running-inspect-do-not-repeat'
+            or prior.get('deploymentName') != 'localbox-three-node-secrets-20261029' or 'deploymentId' in prior
+            or 'deploymentState' in prior or prior.get('templateSha256') != template_hash or sealed_receipt_exists
+            or {row['id'].lower() for row in prior.get('previewChanges',[])} != effects('secrets')):
+        raise RuntimeError('No exact before-sealing, unsubmitted secret attempt is eligible for reconciliation')
+
+
+def main(stage,wait_seconds=1200,resume_unsubmitted=False):
     head = source_guard(); action = 'localbox-three-node-' + stage + '-20261029'; path = OUT / ('three-node-cluster-' + stage + '-receipt.json')
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'stage':stage,'deploymentName':action,'status':'pending',
               'witnessKeyReadOrUpload':False,'publicAccessChangeRequested':False,'sharedKeyChangeRequested':False,'subscriptionWideGrantRequested':False,'platformReadinessVerified':False}
+    if resume_unsubmitted:
+        if stage != 'secrets': raise RuntimeError('Only the exact unsubmitted secret stage can use this reconciliation')
+        original_path = path; prior_bytes = original_path.read_bytes()
+        if prior_bytes != subprocess.check_output(['git','show','HEAD:' + str(original_path.relative_to(ROOT))],cwd=ROOT): raise RuntimeError('Original unsubmitted secret receipt must be committed and retained')
+        prior = json.loads(prior_bytes)
+        verify_unsubmitted_secret_resume(prior,(T['OUT'] / 'private-ssh-sealed-platform-credentials-20261029.json').exists(),hashlib.sha256((ROOT / TEMPLATES['secrets']).read_bytes()).hexdigest())
+        path = OUT / 'three-node-cluster-secrets-after-private-transport-reconciliation.json'
+        record['originalPreSubmitRefusalRetained'] = True; record['originalReceiptSha256'] = hashlib.sha256(prior_bytes).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
     parameters = None
@@ -131,7 +157,7 @@ def main(stage,wait_seconds=1200):
         if az(['deployment','group','list','--subscription',SUB,'-g',RG,'--query',"[?name=='" + action + "'].name"]): raise RuntimeError('Exact stage deployment exists. Inspect, do not replay.')
         principal = None
         if stage == 'secrets':
-            record['privateInputsReceipt'] = inspect_inputs(stage)
+            record['privateInputsReceipt'] = inspect_inputs('secrets-pre-submit-resume' if resume_unsubmitted else stage)
             active = az(['keyvault','secret','list','--subscription',SUB,'--vault-name','kv-lbox-weu-4766ea','--query','[].name'])
             deleted = az(['keyvault','secret','list-deleted','--subscription',SUB,'--vault-name','kv-lbox-weu-4766ea','--query','[].name'])
             if set(SECRET_NAMES) & (set(active) | set(deleted)): raise RuntimeError('Platform credential secret already exists. No overwrite/recovery/version replay.')
@@ -208,6 +234,8 @@ def main(stage,wait_seconds=1200):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('stage',choices=list(TEMPLATES)); parser.add_argument('--wait-seconds',type=int,default=1200)
+    parser.add_argument('--resume-unsubmitted-secrets',action='store_true')
     args = parser.parse_args()
     if not 60 <= args.wait_seconds <= 7200: parser.error('wait bound must be 60–7200 seconds')
-    raise SystemExit(main(args.stage,args.wait_seconds))
+    if args.resume_unsubmitted_secrets and args.stage != 'secrets': parser.error('the pre-submission reconciliation applies only to secrets')
+    raise SystemExit(main(args.stage,args.wait_seconds,args.resume_unsubmitted_secrets))

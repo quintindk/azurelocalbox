@@ -10,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_secret_transport_resume_requires_proven_before_sealing_and_no_submission(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='pre_submit_resume_test')
+        prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-secrets-receipt.json').read_text())
+        h['verify_unsubmitted_secret_resume'](prior,False,prior['templateSha256'])
+        with self.assertRaises(RuntimeError): h['verify_unsubmitted_secret_resume'](prior,True,prior['templateSha256'])
+        with self.assertRaises(RuntimeError): h['verify_unsubmitted_secret_resume'](prior,False,'changed-template')
+        bad = copy.deepcopy(prior); bad['deploymentId'] = 'submitted'
+        with self.assertRaises(RuntimeError): h['verify_unsubmitted_secret_resume'](bad,False,prior['templateSha256'])
+
     def test_no_witness_stage_previews_are_exact_and_do_not_retain_secret_payloads(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'), run_name='three_cluster_stage_test')
         self.assertEqual(len(h['SECRET_NAMES']),2)

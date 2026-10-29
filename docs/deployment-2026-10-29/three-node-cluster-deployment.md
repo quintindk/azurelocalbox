@@ -68,3 +68,22 @@ No additional generic approval is required for these authorised effects. Unexpec
 resource, permission, policy or cost requirements still stop for review. Public
 access and Shared Key remain disabled. AKS/workloads/models and recurring jobs are
 not included. Full platform readiness stays false until final independent acceptance.
+
+## Before-submission private transport interruption
+
+The first three-node secrets stage passed fresh node/storage/AD inspection and the
+exact two-secret create preview, but lost real private connectivity before credential
+sealing or ARM submission. Its original receipt remains uncertain, as first recorded.
+No sealing transport receipt or secrets ARM deployment existed, and after reconnecting
+the existing VPN profile the authenticated active-secret metadata list was empty.
+
+The profile and tun0 route had both reported Active while resolver TCP53 and vault
+TCP443 timed out. One reconnect of `entlz-san-cert` restored both probes and normal
+private DNS, without profile/credential/Azure network or policy changes. Evidence:
+`private-transport-pre-submit-reconciliation.json`.
+
+The dedicated `--resume-unsubmitted-secrets` path requires this exact retained
+before-sealing failure, unchanged template hash, no sealing receipt, no existing
+deployment and no active/deleted target secret identities. It keeps the original
+deployment name and writes a separate reconciliation receipt. This is not permission
+to replay an uncertain submitted resource operation or regenerate existing secrets.
