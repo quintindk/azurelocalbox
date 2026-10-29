@@ -133,7 +133,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
-    three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1'}
+    three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/inspect-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1'}
     if relative in three_node_scripts:
         guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'), run_name='three_node_transport_guard')
         guard['source_guard']([relative, 'scripts/smal-private-powershell.py', 'scripts/smal-three-node-prelude.ps1'])
