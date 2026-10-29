@@ -1,5 +1,14 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## 29 October: NODE1 registered, NODE2 authorisation failure diagnosed
+
+NODE1 bootstrap succeeded and its Arc agent is Connected. NODE2 failed resource
+creation with `AuthorizationFailed` for `Microsoft.HybridCompute/machines/write`
+at 16:33 SAST on 28 October, after connectivity validation succeeded. Owner access
+is active again at the time of inspection. A separate NODE2-only recovery console
+is installed, not invoked. See [diagnosis and guarded retry](../deployment-2026-10-29/arc-registration-recovery.md).
+Do not register NODE1 again or remove the original NODE2 failure marker.
+
 ## Current progress: private ARM secret path verified
 
 The public-vault assumption has now been tested rather than treated as an absolute

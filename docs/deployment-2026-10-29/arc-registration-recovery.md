@@ -55,3 +55,11 @@ python3 -B scripts/register-smal-node-console.py --node LB-NODE02 --inspect
 
 After a console success, independently verify Azure identity, region, machine health
 and actual bootstrap status before cluster deployment. Platform readiness remains false.
+
+## Installed recovery package
+
+At **08:58 SAST on 29 October**, the separate package was installed and hash-verified,
+status **installed-not-invoked**. No authentication or registration was performed.
+Receipt: `../deployment-2026-10-27/private-ssh-install-arc-recovery-console-20261029.json`.
+The regression suite passed **180 tests** before installation. The remaining step
+is the human-terminal command above with fresh device authentication.
