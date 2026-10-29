@@ -26,6 +26,9 @@ class ThreeNodePlanTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): h['verify_observation'](bad, installed)
         bad = copy.deepcopy(good); bad['result']['state']['azureRegistrationPerformed'] = True
         with self.assertRaises(RuntimeError): h['verify_observation'](bad, installed)
+        reader = (ROOT / 'scripts/read-smal-node03-job.ps1').read_text()
+        self.assertIn('[IO.FileShare]::Delete', reader)
+        self.assertIn('Read-Node03SharedJson', reader)
 
     def test_node03_helpers_are_exact_derivations_with_no_forest_creation(self):
         h = runpy.run_path(str(ROOT / 'scripts/derive-smal-node03-helpers.py'), run_name='node03_derive_test')

@@ -349,7 +349,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
         reserve.bind(('127.0.0.1', 0))
         port = reserve.getsockname()[1]
     encoded = base64.b64encode(source.decode('utf-8').encode('utf-16-le')).decode('ascii')
-    stream_source = len(encoded) > 16000
+    stream_source = len(encoded) > 16000 or relative == 'scripts/read-smal-node03-job.ps1'
     original_encoded_length = len(encoded)
     if stream_source:
         encoded = stdin_loader(source)
