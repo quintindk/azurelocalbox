@@ -1,5 +1,14 @@
 # Cluster deployment: blocked by two-node witness authentication
 
+## Superseding decision
+
+The owner approved the hash-bound three-node plan. The added Premium disk, new-only
+W: format, existing node resizes and single VHD relocation have completed. NODE3's
+one-shot local build is in progress. This removes the **design requirement** for
+the two-node Cloud Witness, not the policy constraint. Shared Key remains disabled.
+See [current three-node execution](three-node-execution.md). This document retains
+the original two-node blocker, not a claim that the three-node cluster has deployed.
+
 ## Verified inputs
 
 Final private inspection at **09:26 SAST on 29 October 2026** verified both standalone

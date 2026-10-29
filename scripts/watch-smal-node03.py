@@ -29,13 +29,22 @@ def main(wait_seconds=1800):
     installed = json.loads((OUT / 'three-node-install-node03-receipt.json').read_text())
     if installed.get('status') != 'complete': raise RuntimeError('Exact one-shot installation receipt missing')
     run = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
-    deadline = time.monotonic() + wait_seconds; counter = 0; last = None
+    deadline = time.monotonic() + wait_seconds; counter = 0; last = None; failed_reads = 0
     while True:
         counter += 1; name = 'node03-progress-' + run + '-' + str(counter)
         with contextlib.redirect_stdout(io.StringIO()): code = transport['main']('scripts/read-smal-node03-job.ps1', name)
         proof_path = transport['OUT'] / ('private-ssh-' + name + '.json')
         proof = json.loads(proof_path.read_text())
-        if code != 0: raise RuntimeError('Private read failed. Do not retry the installer or worker.')
+        if code != 0:
+            failed_reads += 1
+            # This retry is ONLY of the named read-only observer. Neither the
+            # installer nor worker is ever dispatched/replayed here.
+            if failed_reads <= 2 and time.monotonic() < deadline:
+                print(json.dumps({'status': 'read-interrupted-worker-not-restarted', 'receipt': str(proof_path.relative_to(ROOT))}), flush=True)
+                time.sleep(30)
+                continue
+            raise RuntimeError('Repeated private reads failed. Worker was not restarted. Inspect transport and existing state.')
+        failed_reads = 0
         data = verify_observation(proof, installed); state = data['state']
         observed = {'phase': state['phase'], 'status': state['status'], 'taskState': data['taskState']}
         if observed != last:
@@ -53,7 +62,7 @@ def main(wait_seconds=1800):
         if time.monotonic() >= deadline:
             print(json.dumps({'status': 'still-running-observe-again-do-not-redispatch', 'receipt': str(proof_path.relative_to(ROOT))}), flush=True)
             return 3
-        time.sleep(20)
+        time.sleep(60)
 
 
 if __name__ == '__main__':

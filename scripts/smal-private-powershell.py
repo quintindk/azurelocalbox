@@ -16,6 +16,7 @@ import socket
 import stat
 import subprocess
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 H = runpy.run_path(str(ROOT / 'scripts/enable-smal-private-ssh.py'), run_name='ssh_transport_helpers')
@@ -97,6 +98,18 @@ def render_arc_console(installer, console, approval, commit):
             .replace('__APPROVAL_SHA256__', approval_hash).replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
+def render_node03_console(installer, console, proof, approval, commit):
+    if (proof.get('status') != 'complete-local-only-human-arc-authentication-next' or proof.get('commonCredentialLoginVerified') is not True
+            or proof.get('vm', {}).get('vmName') != 'LB-NODE03' or proof.get('cleanup', {}).get('setupLogsNeedReview') is not False
+            or proof.get('cleanup', {}).get('answerFileCleanupNeedsReview') is not False):
+        raise RuntimeError('Exact successful NODE3 cleanup/login proof required before console installation')
+    vm_id = str(uuid.UUID(proof['vm']['vmId']))
+    digest = hashlib.sha256(approval).hexdigest().upper()
+    console = console.decode().replace('__NODE03_VM_ID__', vm_id).replace('__NODE03_APPROVAL_SHA256__', digest).replace('__SOURCE_COMMIT__', commit).encode()
+    return (installer.decode().replace('__NODE03_VM_ID__', vm_id).replace('__NODE03_CONSOLE_BASE64__', base64.b64encode(console).decode())
+            .replace('__NODE03_CONSOLE_SHA256__', hashlib.sha256(console).hexdigest().upper()).encode())
+
+
 def main(script, name, envelope_key=None, three_node_context=None):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
@@ -133,7 +146,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
-    three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/inspect-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1'}
+    three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/inspect-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1', 'scripts/install-smal-node03-arc-console.ps1'}
     if relative in three_node_scripts:
         guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'), run_name='three_node_transport_guard')
         guard['source_guard']([relative, 'scripts/smal-private-powershell.py', 'scripts/smal-three-node-prelude.ps1'])
@@ -144,6 +157,11 @@ def main(script, name, envelope_key=None, three_node_context=None):
         public = json.dumps(three_node_context, sort_keys=True).encode()
         prelude = (ROOT / 'scripts/smal-three-node-prelude.ps1').read_text().replace('__THREE_NODE_CONTEXT_BASE64__', base64.b64encode(public).decode()).replace('__THREE_NODE_CONTEXT_SHA256__', hashlib.sha256(public).hexdigest().upper()).replace('__SOURCE_COMMIT__', head)
         source = source.decode().replace('__THREE_NODE_PRELUDE__', prelude).encode()
+        if relative == 'scripts/install-smal-node03-arc-console.ps1':
+            proof_name = 'docs/deployment-2026-10-29/node03-local-completion.json'
+            guard['source_guard'](['scripts/register-smal-node03-console.ps1', proof_name])
+            proof = json.loads((ROOT / proof_name).read_text())
+            source = render_node03_console(source, (ROOT / 'scripts/register-smal-node03-console.ps1').read_bytes(), proof, (guard['OUT'] / 'three-node-approval.json').read_bytes(), head)
         if relative == 'scripts/install-smal-node03-job.ps1':
             dependencies = ['scripts/derive-smal-node03-helpers.py', 'scripts/smal-node03-worker.ps1',
                             'scripts/smal-guest-secret-functions.ps1', 'scripts/smal-guest-image-functions.ps1', 'scripts/smal-guest-vm-functions.ps1', 'scripts/smal-guest-direct-functions.ps1']

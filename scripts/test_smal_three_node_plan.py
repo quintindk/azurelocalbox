@@ -15,6 +15,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_node03_authentication_console_requires_successful_cleanup_and_real_tty(self):
+        h = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='node03_console_render_test')
+        proof = {'status': 'complete-local-only-human-arc-authentication-next', 'commonCredentialLoginVerified': True,
+                 'vm': {'vmName': 'LB-NODE03', 'vmId': '11111111-1111-4111-8111-111111111111'},
+                 'cleanup': {'setupLogsNeedReview': False, 'answerFileCleanupNeedsReview': False}}
+        installer = (ROOT / 'scripts/install-smal-node03-arc-console.ps1').read_bytes().replace(b'__THREE_NODE_PRELUDE__', b'')
+        console = (ROOT / 'scripts/register-smal-node03-console.ps1').read_bytes()
+        approval = (ROOT / 'docs/deployment-2026-10-29/three-node-approval.json').read_bytes()
+        result = h['render_node03_console'](installer, console, proof, approval, 'a' * 40)
+        self.assertNotRegex(result, rb'__[A-Z0-9_]+__')
+        proof['cleanup']['setupLogsNeedReview'] = True
+        with self.assertRaises(RuntimeError): h['render_node03_console'](installer, console, proof, approval, 'a' * 40)
+        launcher = runpy.run_path(str(ROOT / 'scripts/register-smal-node03-console.py'), run_name='node03_tty_test')
+        with patch.object(launcher['OLD']['sys'].stdin, 'isatty', return_value=False):
+            with self.assertRaises(RuntimeError): launcher['main']()
+        source = (ROOT / 'scripts/register-smal-node03-console.py').read_text()
+        self.assertIn('return subprocess.run(args, timeout=7200).returncode', source)
+        self.assertNotIn('get-access-token', source)
+        for name in ['register-smal-node03-console.ps1', 'install-smal-node03-arc-console.ps1']:
+            path = ROOT / 'scripts' / name
+            code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+            subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+        console_text = console.decode()
+        for forbidden in ['-ArmAccessToken', 'Get-AzAccessToken', 'Start-Transcript', 'Install-Module']:
+            self.assertNotIn(forbidden, console_text)
+        self.assertIn('[IO.FileMode]::CreateNew', console_text)
+
     def test_node03_observer_requires_exact_job_hashes_principal_and_no_recurrence(self):
         h = runpy.run_path(str(ROOT / 'scripts/watch-smal-node03.py'), run_name='node03_observer_test')
         installed = {'result': {'workerSha256': 'A' * 64, 'bundleSha256': 'B' * 64, 'sourceCommit': 'c' * 40}}

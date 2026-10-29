@@ -1,5 +1,15 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Approved three-node change is executing, 29 October
+
+The exact three-node plan is approved. The additional 2 TiB Premium SSD is attached
+and verified as W:. NODE1/NODE2 are now 64 GiB / 8 vCPUs with original identities,
+bootstrap success and data IDs preserved. The single approved VHD move is verified.
+The DC, shared networking, public-access/Shared Key settings and original V: pool
+were not changed. NODE3's protected one-shot build task is running, last independently
+observed expanding the verified OS image. It has not registered NODE3 or deployed
+a cluster. See [execution evidence and remaining gates](../deployment-2026-10-29/three-node-execution.md).
+
 ## Existing disks converted to Premium SSD, 29 October
 
 The owner's explicit Premium SSD request has been applied to **all nine existing
@@ -11,22 +21,28 @@ observations and both earlier CLI/startup observer failures are retained, not
 rewritten as successful attempts. See
 `../deployment-2026-10-29/premium-disk-conversion-reconciled-result.json`.
 
-No additional disk, guest resize, NODE3, witness change or cluster deployment has
-been applied. The exact [three-node proposal](../deployment-2026-10-29/three-node-proposal.md)
-is staged for separate approval. It retains the E32 host, proposes 64 GiB / 8 vCPUs
-per node, an additional 2 TiB Premium SSD and a single identified blank VHD move.
+At the end of the Premium-only phase, no additional disk, guest resize, NODE3,
+witness change or cluster deployment had been applied. The immutable
+[three-node proposal](../deployment-2026-10-29/three-node-proposal.md) was subsequently
+approved in `../deployment-2026-10-29/three-node-approval.json`. Its storage/resize
+effects have since been applied as recorded at the top of this document. It retains
+the E32 host, specifies 64 GiB / 8 vCPUs per node, an additional 2 TiB Premium SSD
+and a single identified blank VHD move.
 That new disk is an additional public retail capacity reference of USD315.60/month,
 excluding other applicable charges. Existing nine-disk Premium capacity is
 USD535.14/month, not a contract quote or total platform cost.
 
-## Cluster deployment stop, 29 October
+## Historical two-node deployment stop, 29 October
 
-The final node/storage/AD inspection passed. Deployment is now blocked by the
-**two-node Cloud Witness authentication design**, not by the private vault. The
+The final node/storage/AD inspection passed. The two-node deployment was blocked by
+the **Cloud Witness authentication design**, not by the private vault. The
 witness rejects key-authenticated requests with `KeyBasedAuthenticationNotPermitted`,
 and the owner confirmed Shared Key will not be permitted by policy. No enable,
 exemption, credential upload, cluster creation or No Witness substitution was
-attempted. See [evidence, prepared code and required design decision](../deployment-2026-10-29/cluster-deployment-status.md).
+attempted. The approved three-node change now removes that dependency, but NODE3
+and service Validate/Deploy remain incomplete. See
+[historical evidence](../deployment-2026-10-29/cluster-deployment-status.md) and the
+current execution record linked above.
 
 ## 29 October: both Arc nodes verified, scoped platform roles applied
 
