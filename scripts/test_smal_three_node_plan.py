@@ -15,6 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_node03_observer_requires_exact_job_hashes_principal_and_no_recurrence(self):
+        h = runpy.run_path(str(ROOT / 'scripts/watch-smal-node03.py'), run_name='node03_observer_test')
+        installed = {'result': {'workerSha256': 'A' * 64, 'bundleSha256': 'B' * 64, 'sourceCommit': 'c' * 40}}
+        good = {'status': 'complete', 'result': {'workerSha256': 'A' * 64, 'bundleSha256': 'B' * 64, 'actualTriggerCount': 0, 'principal': 'SYSTEM',
+                'state': {'sourceCommit': 'c' * 40, 'azureRegistrationPerformed': False, 'clusterDeploymentPerformed': False}}}
+        h['verify_observation'](good, installed)
+        for key, value in [('actualTriggerCount', 1), ('workerSha256', 'other'), ('principal', 'other-user')]:
+            bad = copy.deepcopy(good); bad['result'][key] = value
+            with self.assertRaises(RuntimeError): h['verify_observation'](bad, installed)
+        bad = copy.deepcopy(good); bad['result']['state']['azureRegistrationPerformed'] = True
+        with self.assertRaises(RuntimeError): h['verify_observation'](bad, installed)
+
     def test_node03_helpers_are_exact_derivations_with_no_forest_creation(self):
         h = runpy.run_path(str(ROOT / 'scripts/derive-smal-node03-helpers.py'), run_name='node03_derive_test')
         for name, source in h['build']().items():
