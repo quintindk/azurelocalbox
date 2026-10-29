@@ -226,7 +226,7 @@ def main(script, name):
                 or hashlib.sha256(data[names[1]]).hexdigest() != approval.get('proposalMarkdownSha256')):
             raise RuntimeError('Exact staged cloud/local prerequisite approval missing')
         source = source.decode('utf-8').replace('__SOURCE_COMMIT__', head).encode('utf-8')
-    if relative == 'scripts/install-smal-arc-console.ps1':
+    if relative in ['scripts/install-smal-arc-console.ps1', 'scripts/install-smal-arc-recovery-console.ps1']:
         values = {}
         for name in ['scripts/register-smal-node-console.ps1', 'docs/deployment-2026-10-28/cloud-apply-approval.json', 'docs/deployment-2026-10-28/cloud-apply-proposal.json', 'docs/deployment-2026-10-28/cloud-apply-proposal.md']:
             values[name] = (ROOT / name).read_bytes()

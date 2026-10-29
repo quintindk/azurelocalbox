@@ -1,9 +1,11 @@
 # HUMAN CONSOLE ONLY. Official device-code authentication, no exported ARM token.
 param(
     [Parameter(Mandatory=$true)][ValidateSet('LB-NODE01','LB-NODE02')][string]$NodeName,
-    [switch]$InspectOnly
+    [switch]$InspectOnly,
+    [switch]$RetryAfterAuthorizationFailure
 )
 $ErrorActionPreference = 'Stop'
+if ($RetryAfterAuthorizationFailure -and ($InspectOnly -or $NodeName -cne 'LB-NODE02')) { throw 'Recovery is only for the diagnosed NODE2 authorization failure' }
 $root = 'C:\ProgramData\AzureLocalBox\Bootstrap\arc-console-20261028-01'
 $approvalPath = Join-Path $root 'approval.json'
 if ($env:COMPUTERNAME -ne 'LocalBox-Client' -or (Get-FileHash $approvalPath).Hash -cne '__APPROVAL_SHA256__') { throw 'Approved registration context differs' }
@@ -23,11 +25,28 @@ $binding = (Get-Content 'C:\ProgramData\AzureLocalBox\Bootstrap\cluster-prereqs-
 if ($binding.loginVerified -ne $true -or $binding.vmId -ine $vm.Id.ToString() -or $binding.secretDirectory -cne $store -or $binding.role -cne 'cluster-node-admin') { throw 'Verified node credential binding differs' }
 $secure = Read-LabGuestSecureSecret -SecretDirectory $store -Role 'cluster-node-admin'; $session = $null
 $statePath = Join-Path $root ($NodeName + '.state.json')
+if ($RetryAfterAuthorizationFailure) { $statePath = Join-Path $root ($NodeName + '.authorization-retry-20261029.state.json') }
+$attemptCreated = $false
 $state = @{ sourceCommit = '__SOURCE_COMMIT__'; node = $NodeName; vmId = $vm.Id.ToString(); tenant = 'c6e67968-af25-4557-ab8b-06b693048d3b'; subscription = '8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea'; resourceGroup = 'rg-localbox-platform-weu-1'; region = 'westeurope'; solution = '12.2610.1004.41'; auth = 'human-device-code'; explicitOwnerTokenProvided = $false }
 try {
     $session = New-PSSession -VMId $vm.Id -Credential ([pscredential]::new(($NodeName + '\Administrator'), $secure)) -ErrorAction Stop
     if (-not $InspectOnly) {
-        $marker = [IO.File]::Open((Join-Path $root ($NodeName + '.registration.started')), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
+        $markerPath = Join-Path $root ($NodeName + '.registration.started')
+        if ($RetryAfterAuthorizationFailure) {
+            if (-not (Test-Path -LiteralPath $markerPath) -or (Test-Path -LiteralPath $statePath)) { throw 'Original registration marker missing or recovery state already exists' }
+            $eligible = Invoke-Command -Session $session -ErrorAction Stop -ScriptBlock {
+                $s = Get-ArcBootstrapStatus
+                $arc = @($s.Response.DetailedResponse | Where-Object Name -EQ 'ArcConfiguration')
+                $reg = @($arc.DetailedResponse | Where-Object Name -EQ 'ArcRegistration')
+                $connectivity = @($arc.DetailedResponse | Where-Object Name -EQ 'ConnectivityValidation')
+                $log = Get-Content -LiteralPath 'C:\ProgramData\AzureConnectedMachineAgent\Log\azcmagent.log' -Tail 3000
+                [bool]($s.Response.Status -eq 'Failed' -and $reg.Count -eq 1 -and $reg[0].Status -eq 'Failed' -and $connectivity.Count -eq 1 -and $connectivity[0].Status -eq 'Succeeded' -and ($log -match 'AuthorizationFailed' -match 'Microsoft.HybridCompute/machines/write').Count -gt 0)
+            }
+            if ($eligible -ne $true) { throw 'Current node state does not match the diagnosed authorization failure' }
+            $markerPath = Join-Path $root ($NodeName + '.authorization-retry-20261029.started')
+        }
+        $marker = [IO.File]::Open($markerPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); $marker.Dispose()
+        $attemptCreated = $true
         $state.status = 'invoking-official-registration-human-auth-required'; $state.atUtc = [datetime]::UtcNow.ToString('o')
         [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
         Write-Host 'Authenticate only in the official Microsoft browser flow, using the approved tenant/account. Do not copy codes or credentials into files/chat.'
@@ -48,6 +67,6 @@ try {
     $observed | ConvertTo-Json -Compress
     if (-not $InspectOnly) { $state.status = 'command-returned-independent-arm-verification-required'; $state.observed = $observed; $state.atUtc = [datetime]::UtcNow.ToString('o'); [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false)) }
 } catch {
-    if (-not $InspectOnly) { $state.status = 'interrupted-or-failed-inspect-before-resume'; $state.errorType = $_.Exception.GetType().Name; $state.atUtc = [datetime]::UtcNow.ToString('o'); [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false)) }
+    if ($attemptCreated) { $state.status = 'interrupted-or-failed-inspect-before-resume'; $state.errorType = $_.Exception.GetType().Name; $state.atUtc = [datetime]::UtcNow.ToString('o'); [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false)) }
     throw 'Registration was not independently verified. Keep its marker; inspect status before any retry or documented reboot continuation.'
 } finally { if ($session) { Remove-PSSession -Session $session }; $secure.Dispose() }

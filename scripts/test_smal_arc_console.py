@@ -23,9 +23,33 @@ class ArcConsoleTests(unittest.TestCase):
         subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
 
     def test_powershell_scripts_parse(self):
-        for name in ['register-smal-node-console.ps1', 'install-smal-arc-console.ps1']:
+        for name in ['register-smal-node-console.ps1', 'install-smal-arc-console.ps1', 'install-smal-arc-recovery-console.ps1']:
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
             subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+
+    def test_recovery_requires_node2_exact_failure_and_current_owner_access(self):
+        h = runpy.run_path(str(ROOT / 'scripts/register-smal-node-console.py'), run_name='recovery_boundary_test')
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-arc-registration-diagnosis-20261029.json').read_text())
+        roles = [{'roleDefinitionName': 'Owner', 'scope': '/subscriptions/' + h['SUB']}]
+        h['validate_recovery']('LB-NODE02', False, proof, roles)
+        for node, inspect, actual_roles in [('LB-NODE01', False, roles), ('LB-NODE02', True, roles), ('LB-NODE02', False, [])]:
+            with self.assertRaises(RuntimeError): h['validate_recovery'](node, inspect, proof, actual_roles)
+        proof['result']['nodes'][1]['agentLog']['facts'] = []
+        with self.assertRaises(RuntimeError): h['validate_recovery']('LB-NODE02', False, proof, roles)
+
+    def test_recovery_preserves_original_attempt_and_does_not_run_on_install(self):
+        source = (ROOT / 'scripts/register-smal-node-console.ps1').read_text()
+        self.assertIn('if ($attemptCreated)', source)
+        self.assertIn('.authorization-retry-20261029.state.json', source)
+        self.assertIn('.authorization-retry-20261029.started', source)
+        self.assertIn("$s.Response.Status -eq 'Failed'", source)
+        self.assertNotIn('Remove-Item', source)
+        installer = (ROOT / 'scripts/install-smal-arc-recovery-console.ps1').read_text()
+        self.assertNotIn('Invoke-AzStackHciArcInitialization', installer)
+        self.assertNotIn('New-PSSession', installer)
+        helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='recovery_render_test')
+        rendered = helpers['render_arc_console'](installer.encode(), source.encode(), (ROOT / 'docs/deployment-2026-10-28/cloud-apply-approval.json').read_bytes(), 'a' * 40)
+        self.assertNotRegex(rendered, rb'__[A-Z_]+__')
 
     def test_installer_only_delivers_pinned_console_and_approval(self):
         helpers = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='console_render_test')
