@@ -53,3 +53,15 @@ For NODE2 bootstrap recovery, startup is followed by **inspection**, not registr
 ```bash
 python3 -B scripts/register-smal-node-console.py --node LB-NODE02 --inspect
 ```
+
+## Verification, 29 October 2026
+
+- Regression suite: 177 tests passed, including startup identity, routing, bounded
+  waiting, uncertain-effect handling and no-op behaviour tests.
+- Two consecutive live runs completed with host Running/agent Ready and all three
+  guests Running with healthy heartbeats. Both requested **zero** host/guest starts.
+- The combined command's stopped-host path was tested offline, not by deliberately
+  shutting down the live environment. Earlier guest-start receipts independently
+  record all three guests changing from Off to Running.
+- Live receipts: `../deployment-2026-10-29/start-20261029-065230-91ec0efb.json`
+  and `../deployment-2026-10-29/start-20261029-065252-f7c03032.json`.
