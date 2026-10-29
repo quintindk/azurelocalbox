@@ -17,10 +17,14 @@ def build():
     prerequisites = copy.deepcopy(original['localbox-cluster-prerequisites.json'])
     settings = copy.deepcopy(original['localbox-cluster-settings.json'])
     secrets = copy.deepcopy(original['localbox-platform-secrets.json'])
+    naming = json.loads((ROOT / 'docs/deployment-2026-10-29/cluster-name-correction-approval.json').read_text())
+    if naming.get('approved') is not True or naming.get('humanAnswer') != 'Use smal-localbox01' or naming.get('clusterName') != 'smal-localbox01': raise RuntimeError('Exact cluster-name correction approval missing')
     scope = '/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1'
     names = ['LB-NODE01','LB-NODE02','LB-NODE03']
     for template in [prerequisites, settings]:
         template['parameters']['arcNodeResourceIds']['defaultValue'] = [scope + '/providers/Microsoft.HybridCompute/machines/' + name for name in names]
+        template['parameters']['clusterName']['defaultValue'] = naming['clusterName']
+        template['parameters']['clusterName']['allowedValues'] = [naming['clusterName']]
     settings['parameters']['physicalNodesSettings']['defaultValue'] = [{'name': name, 'ipv4Address': '10.64.0.' + str(11 + index)} for index, name in enumerate(names)]
     settings['parameters']['witnessType']['defaultValue'] = 'No Witness'
     settings['parameters']['witnessType']['allowedValues'] = ['No Witness']
@@ -35,7 +39,14 @@ def build():
     for key in ['storageWitnessECEName','storageWitnessSecretName']:
         variables.pop(key)
     secrets['resources'] = [item for item in secrets['resources'] if not item['name'].endswith('-WitnessStorageKey')]
+    for item in secrets['resources']:
+        item['name'] = item['name'].replace('/' + naming['originalClusterName'] + '-', '/' + naming['clusterName'] + '-')
     if len(secrets['resources']) != 2 or 'listKeys' in json.dumps(secrets) or 'WitnessStorageKey' in json.dumps(settings): raise RuntimeError('No-witness derivation retained a forbidden witness effect')
+    for template in [prerequisites, settings]:
+        for parameter in template['parameters'].values():
+            value = parameter.get('defaultValue')
+            if isinstance(value,str) and (len(value) < parameter.get('minLength',0) or len(value) > parameter.get('maxLength',2**31)):
+                raise RuntimeError('Derived parameter default violates its pinned length constraints')
     return {'localbox-three-node-prerequisites.json': prerequisites, 'localbox-three-node-settings.json': settings, 'localbox-three-node-secrets.json': secrets}
 
 

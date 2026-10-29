@@ -1,0 +1,70 @@
+# Three-node cluster deployment execution
+
+## Verified onboarding and scope
+
+All three local bootstraps are **Succeeded** and all three Arc machines are
+**Connected**, region **westeurope**, build **10.0.26100.33650**. NODE3's inspected
+managed-identity principal is **bd9a2019-2109-4aba-9f4e-90a1d300325d**.
+`three-node-arc-verified.json` and the private post-registration inspection retain
+the exact cloud/local identities, live MACs and twelve unchanged RAW data-device IDs.
+
+NODE3's three approved role bindings were applied and independently read back:
+two platform roles at `rg-localbox-platform-weu-1`, and Secrets User only at
+`kv-lbox-weu-4766ea`. The original seven platform roles and deployer Secrets Officer
+were preserved. See `node03-platform-roles-receipt.json` and its checked what-if.
+
+## Corrected cluster name
+
+The original `smal-localbox-01` is 16 characters, violating the pinned template's
+15-character cluster-name maximum. This was caught before real credential upload
+or cluster creation. The owner selected **Use smal-localbox01**. The correction
+is retained separately in `cluster-name-correction-approval.json`; prior approved
+proposals are not edited. Only the cluster/Windows name and its two dedicated
+secret prefixes change. Region, networking, costs, topology and permissions do not.
+
+Active templates use **smal-localbox01**, three nodes and **No Witness**. Their
+derivation now validates default string lengths against the pinned constraints.
+The old two-node drafts/failure receipts remain historical and are not executed.
+
+## Stages and safeguards
+
+`scripts/deploy-smal-three-node-cluster.py` runs separate fixed, create-only stages:
+
+1. **secrets**: fresh private node/storage/AD inspection, exact two-secret create
+   preview, approved shared node-admin and LCM credential delivery. Only public
+   metadata is retained after upload. No witness secret or storage-key read.
+2. **prerequisites**: three HCI edge-device resources and the owned cluster shell,
+   using existing private vault/storage/network/roles. Inspect the new system-assigned
+   cluster identity independently before granting it anything.
+3. **cluster-role**: exactly one Secrets User grant to that actual inspected cluster
+   principal, only at the dedicated vault. No guessed identity or broader scope.
+4. **validate**: one deployment-settings resource, mode Validate. This is a
+   resource-creating service action, not read-only template validation.
+5. **deploy**: only after positive **reported service validation success** and the
+   exact settings-template hash still matching the validated configuration.
+
+ARM deployment acceptance/Succeeded alone is not treated as platform validation.
+The reported `validationStatus`/`deploymentStatus` must positively succeed, with
+no failed/in-progress reported steps or exceptions. Status records omit raw service
+exception/description text because it can contain sensitive diagnostic material.
+API status model reference:
+[2025-09-15-preview hciCommon.json](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/azurestackhci/resource-manager/Microsoft.AzureStackHCI/StackHCI/preview/2025-09-15-preview/hciCommon.json).
+
+The credential transport is the reviewed one-use **RSA4096-OAEP-SHA256** envelope
+from protected host DPAPI storage to the operator process. Its private key uses an
+anonymous RAM-backed descriptor. Actual values travel in memory/secure ARM stdin
+parameters, never command arguments, plaintext files, chat, source or receipts.
+No existing owner ARM token is forwarded. Managed runtimes cannot guarantee erasure
+of every transient in-memory string copy. Synthetic crypto interoperability tests
+do not alone prove actual service credential acceptance.
+
+Every stage checks exact source/approval hashes, fresh Arc health, all ten approved
+platform role bindings, private vault DNS/RBAC/public-access state and current blank
+disk/AD prerequisites. Each has a distinct durable receipt/deployment identity.
+Failures/timeouts are retained. No automatic replay, rollback, repeated Validate
+after deployment failure, licence reset, disk reinitialisation or policy bypass.
+
+No additional generic approval is required for these authorised effects. Unexpected
+resource, permission, policy or cost requirements still stop for review. Public
+access and Shared Key remain disabled. AKS/workloads/models and recurring jobs are
+not included. Full platform readiness stays false until final independent acceptance.

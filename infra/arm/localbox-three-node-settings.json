@@ -128,9 +128,9 @@
       "metadata": {
         "description": "This name must be unique from physical node names"
       },
-      "defaultValue": "smal-localbox-01",
+      "defaultValue": "smal-localbox01",
       "allowedValues": [
-        "smal-localbox-01"
+        "smal-localbox01"
       ]
     },
     "witnessType": {
