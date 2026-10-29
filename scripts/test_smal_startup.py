@@ -15,6 +15,14 @@ class StartupTests(unittest.TestCase):
         self.h = runpy.run_path(str(ROOT / 'scripts/start-smal-localbox.py'), run_name='startup_test')
         self.scope = self.h['ensure_host'].__globals__
 
+    def test_node03_startup_binding_comes_from_completed_real_guest(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-29/node03-local-completion.json').read_text())
+        self.assertEqual(len(self.h['GUESTS']), 4)
+        self.assertEqual(self.h['GUESTS']['LB-NODE03'], proof['vm']['vmId'])
+        self.assertTrue(proof['commonCredentialLoginVerified'])
+        self.assertFalse(proof['cleanup']['setupLogsNeedReview'])
+        self.assertFalse(proof['cleanup']['answerFileCleanupNeedsReview'])
+
     def test_running_host_is_not_restarted(self):
         ready = {'power': 'PowerState/running', 'agentReady': True}
         record = {}

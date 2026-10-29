@@ -383,6 +383,7 @@ def main(script, name, envelope_key=None, three_node_context=None):
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,
+                     'scripts/inspect-smal-three-node-live.ps1': 240,
                      'scripts/stop-smal-guests-for-premium.ps1': 240,
                      'scripts/format-smal-node03-disk.ps1': 240,
                      'scripts/resize-smal-existing-nodes.ps1': 1500,

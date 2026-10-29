@@ -7,6 +7,7 @@ from decimal import Decimal
 import json
 import runpy
 import re
+import uuid
 import subprocess
 import unittest
 from unittest.mock import Mock, patch
@@ -15,6 +16,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_node03_completion_preserves_exact_new_vhd_to_guest_disk_identity(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-29/node03-local-completion.json').read_text())
+        self.assertEqual(proof['status'], 'complete-local-only-human-arc-authentication-next')
+        self.assertEqual(proof['vm']['vmId'], '5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9')
+        self.assertFalse(proof['arcRegistrationVerified'])
+        self.assertFalse(proof['clusterDeploymentVerified'])
+        expected = set()
+        for disk in proof['hostDisks']:
+            guid = uuid.UUID(disk['diskId'])
+            expected.add('60022480' + (guid.bytes_le[:6] + guid.bytes[-6:]).hex().upper())
+        self.assertEqual(expected, {disk['uniqueId'] for disk in proof['guestDisks']})
+        raw = [disk for disk in proof['guestDisks'] if not disk['isBoot'] and not disk['isSystem']]
+        self.assertEqual(len(raw), 4)
+        self.assertTrue(all(disk['style'] == 'RAW' and disk['size'] == 170 * 1024**3 for disk in raw))
+        self.assertTrue(proof['clock']['selectedClockChecksPassed'])
+        self.assertTrue(proof['connectivity']['transportChecksPassed'])
+        self.assertFalse(proof['cleanup']['setupLogsNeedReview'])
+        self.assertFalse(proof['cleanup']['answerFileCleanupNeedsReview'])
+        path = ROOT / 'scripts/inspect-smal-three-node-live.ps1'
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
     def test_node03_authentication_console_requires_successful_cleanup_and_real_tty(self):
         h = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='node03_console_render_test')
         proof = {'status': 'complete-local-only-human-arc-authentication-next', 'commonCredentialLoginVerified': True,

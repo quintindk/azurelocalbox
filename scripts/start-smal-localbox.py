@@ -1,4 +1,4 @@
-"""Start the existing SMAL host and its exact three nested guests. Safe to rerun.
+"""Start the existing SMAL host and its exact four nested guests. Safe to rerun.
 
 Requires existing Azure CLI sign-in/PIM access and the private VPN. Does not
 activate roles, change shutdown automation, or invoke registration/bootstrap.
@@ -24,7 +24,8 @@ HOST = 'LocalBox-Client'
 VM_ID = f'/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Compute/virtualMachines/{HOST}'
 GUESTS = {'LB-DC01': 'f94c71f1-6854-48b9-a9f1-8238c99366d0',
           'LB-NODE01': '3adff629-2f67-449b-ab32-8a8748c46f34',
-          'LB-NODE02': '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3'}
+          'LB-NODE02': '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3',
+          'LB-NODE03': '5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9'}
 OUT = ROOT / 'docs/deployment-2026-10-29'
 
 
@@ -39,7 +40,7 @@ def az(args, timeout=90):
 
 def verify_source():
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    for path in ['scripts/start-smal-localbox.py', 'scripts/start-smal-existing-guests.ps1', 'scripts/smal-private-powershell.py']:
+    for path in ['scripts/start-smal-localbox.py', 'scripts/start-smal-existing-guests.ps1', 'scripts/smal-private-powershell.py', 'docs/deployment-2026-10-29/node03-local-completion.json']:
         if (ROOT / path).read_bytes() != subprocess.check_output(['git', 'show', 'HEAD:' + path], cwd=ROOT):
             raise RuntimeError('Startup source differs from HEAD. Commit and push before use.')
     branch = subprocess.check_output(['git', 'branch', '--show-current'], cwd=ROOT, text=True).strip()
@@ -103,7 +104,7 @@ def verify_guest_result(receipt):
         raise RuntimeError('Private guest operation incomplete. Inspect its receipt before another attempt.')
     data = receipt.get('result', {})
     rows = data.get('guests', [])
-    if len(rows) != 3 or {row['name']: row['id'].lower() for row in rows} != GUESTS:
+    if len(rows) != len(GUESTS) or {row['name']: row['id'].lower() for row in rows} != GUESTS:
         raise RuntimeError('Exact nested guest identities differ.')
     if any(row.get('after') != 'Running' or row.get('heartbeatReady') is not True for row in rows):
         raise RuntimeError('Not all guests are Running with a healthy Hyper-V heartbeat.')
@@ -151,7 +152,7 @@ def main(host_timeout=900):
                 raise RuntimeError('Nested startup incomplete. Inspect the private transport receipt. Do not blindly retry.')
             verify_guest_result(guest_receipt)
             record['guests'] = guest_receipt['result']['guests']
-            record['status'] = 'complete-host-and-three-guests-running-heartbeats-healthy'
+            record['status'] = 'complete-host-and-four-guests-running-heartbeats-healthy'
         except (subprocess.TimeoutExpired, TimeoutError):
             record['status'] = 'uncertain-or-readiness-timeout-inspect-before-retry'
         except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:

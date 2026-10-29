@@ -2,7 +2,7 @@
 
 ## Daily startup
 
-Start the existing outer host and all three nested guests after the nightly shutdown:
+Start the existing outer host and all four nested guests (DC plus three nodes) after the nightly shutdown:
 
 ```bash
 python3 -B scripts/start-smal-localbox.py

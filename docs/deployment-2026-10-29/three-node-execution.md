@@ -1,5 +1,22 @@
 # Approved three-node execution
 
+## NODE3 local build completed, 12:18 SAST
+
+The existing one-shot task exited **0**, state Ready, with the expected worker and
+helper hashes. NODE3's local setup, network, nested Hyper-V, clock, answer-file
+cleanup and shared cluster-only credential login checks passed. Published actual
+VM ID: **5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9**.
+
+`node03-local-completion.json` binds that ID and the five new VHD GUIDs to the
+observed guest disk unique IDs. Its nested `vm` section is the **creation-time**
+snapshot (Off and zero dynamic MACs before first boot), not a claim about current
+power state or live MAC addresses. A separate live inspection must be used for
+current state. Daily startup now includes the actual fourth guest.
+
+NODE3 is **not Arc-registered yet**, and the Azure Local cluster is not deployed.
+The prepared human-auth console still needs its reviewed installation and readback.
+No additional approval is requested for that already authorised authentication path.
+
 ## Authority and completed effects
 
 The owner's **Approved** answer is bound to the exact proposal JSON/Markdown hashes
@@ -41,7 +58,7 @@ repeated. Relevant records:
 - `../deployment-2026-10-27/private-ssh-node03-disk-format-reconciled-20261029.json`.
 - `three-node-resize-receipt.json`.
 
-## NODE3: installation in progress, not registration
+## Historical build progress and source pins
 
 The one-shot SYSTEM task **LocalBox-Node03-20261029-01** was installed and started
 from reviewed, committed and pushed source. It has **no schedule/reboot trigger**,

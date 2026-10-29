@@ -1,11 +1,12 @@
-# Restore only the three approved existing guests after an outer-host shutdown.
+# Restore only the four approved existing guests after an outer-host shutdown.
 # No registration, marker deletion, VM reconfiguration or bootstrap invocation.
 $ErrorActionPreference = 'Stop'
 if ($env:COMPUTERNAME -cne 'LocalBox-Client') { throw 'Unexpected outer host' }
 $targets = @(
     @{ name = 'LB-DC01'; id = 'f94c71f1-6854-48b9-a9f1-8238c99366d0' },
     @{ name = 'LB-NODE01'; id = '3adff629-2f67-449b-ab32-8a8748c46f34' },
-    @{ name = 'LB-NODE02'; id = '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3' }
+    @{ name = 'LB-NODE02'; id = '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3' },
+    @{ name = 'LB-NODE03'; id = '5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9' }
 )
 # Validate every identity/state before starting any guest. Never reset a bad state.
 foreach ($target in $targets) {

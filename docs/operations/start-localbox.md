@@ -31,11 +31,11 @@ python3 -B scripts/start-smal-localbox.py
    deallocating and unexpected states are refused.
 3. Waits for host Running and Azure VM agent Ready, bounded by `--host-timeout`
    (default 900 seconds). This does not certify SSH availability.
-4. Uses VPN → private Premium Bastion → pinned-key SSH to validate the exact three
-   existing guest IDs, then starts the DC first, followed by NODE1 and NODE2.
+4. Uses VPN → private Premium Bastion → pinned-key SSH to validate the exact four
+   existing guest IDs, then starts the DC first, followed by NODE1, NODE2 and NODE3.
    Already Running guests are left alone. There is no DC service-readiness gate
    between guest starts.
-5. Waits for healthy Hyper-V heartbeats from all three guests. Heartbeat means OS
+5. Waits for healthy Hyper-V heartbeats from all four guests. Heartbeat means OS
    liveness, not working AD, DNS, PowerShell Direct, Arc or Azure Local readiness.
 
 Safe to run again after a completed run. It does not reboot Running machines,
@@ -85,3 +85,11 @@ Reconciled startup receipt:
 `../deployment-2026-10-29/start-20261029-080708-7389325a.json`.
 Final conversion/recovery evidence:
 `../deployment-2026-10-29/premium-disk-conversion-reconciled-result.json`.
+
+### Four-guest binding after NODE3 local completion
+
+The current startup source includes NODE3's returned VM ID
+`5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9`. It is bound to the committed successful local
+build/cleanup/login receipt, not inferred from its name. Historical three-guest
+receipts above remain unchanged. The command now targets the DC and all three
+Azure Local guests. NODE3's Arc authentication remains a separate human step.
