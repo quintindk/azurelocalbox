@@ -18,6 +18,18 @@ $results = @(foreach ($target in $targets) {
     if ($before -ne 'Running') { Start-VM -VM $vm -ErrorAction Stop }
     $vm = Get-VM -Id $target.id
     if ($vm.Name -cne $target.name -or $vm.State.ToString() -ne 'Running') { throw 'Guest did not reach Running' }
-    @{ name = $vm.Name; id = $vm.Id.ToString(); before = $before; after = $vm.State.ToString(); startRequested = ($before -ne 'Running') }
+    @{ name = $vm.Name; id = $vm.Id.ToString(); before = $before; after = $vm.State.ToString(); startRequested = ($before -ne 'Running'); heartbeatReady = $false }
 })
-@{ atUtc = [datetime]::UtcNow.ToString('o'); guests = $results; registrationInvoked = $false; registrationMarkersChanged = $false; guestOsReadinessVerified = $false } | ConvertTo-Json -Depth 4 -Compress
+# Heartbeat is an OS-liveness check, not AD/Arc/cluster/application acceptance.
+$deadline = [datetime]::UtcNow.AddSeconds(240)
+do {
+    foreach ($row in $results) {
+        $vm = Get-VM -Id $row.id
+        if ($vm.Name -cne $row.name -or $vm.State.ToString() -ne 'Running') { throw 'Guest stopped or identity changed during startup' }
+        $row.heartbeatReady = $vm.Heartbeat.ToString() -in @('OkApplicationsUnknown', 'OkApplicationsHealthy')
+    }
+    if (@($results | Where-Object { -not $_.heartbeatReady }).Count -eq 0) { break }
+    if ([datetime]::UtcNow -ge $deadline) { throw 'Guest heartbeat readiness timed out. Inspect before retrying.' }
+    Start-Sleep -Seconds 5
+} while ($true)
+@{ atUtc = [datetime]::UtcNow.ToString('o'); guests = $results; registrationInvoked = $false; registrationMarkersChanged = $false; guestOsReadinessVerified = $false; guestHeartbeatVerified = $true } | ConvertTo-Json -Depth 4 -Compress

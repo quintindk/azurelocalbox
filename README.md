@@ -1,5 +1,17 @@
 # azure-localbox
 
+## Daily startup
+
+Start the existing outer host and all three nested guests after the nightly shutdown:
+
+```bash
+python3 -B scripts/start-smal-localbox.py
+```
+
+Requires existing Azure sign-in/PIM access and the private VPN. Safe to rerun after
+success. Waits for the host agent and guest heartbeats, without rerunning bootstrap
+or changing the shutdown automation. [Startup and recovery details](docs/operations/start-localbox.md).
+
 ## Current deployment: shared SMAL landing zone, 2026-10-27
 
 The earlier LocalBox deployment was removed. Use the existing shared

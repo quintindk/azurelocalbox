@@ -1,0 +1,55 @@
+# Start LocalBox after the nightly shutdown
+
+From `/home/quintin/play/azurelocalbox`:
+
+```bash
+python3 -B scripts/start-smal-localbox.py
+```
+
+## Prerequisites
+
+- Existing Azure CLI sign-in with the approved account. Activate existing PIM
+  access manually if needed. No role activation or grant is performed by this command.
+- Connected `entlz-san-cert` VPN with actual `tun0` routes to the host and resolver.
+  An Active profile alone is not sufficient. If the routes are stale, reconnect:
+
+  ```bash
+  nmcli connection down id entlz-san-cert
+  nmcli connection up id entlz-san-cert
+  ```
+
+- Existing pinned SSH key and successful private Bastion setup receipts on this
+  operator machine. This is not a portable first-time provisioning tool.
+- Startup source must match committed HEAD and be pushed to the current branch.
+
+## Behaviour
+
+1. Checks source, private routing, resolver reachability and signed-in identity
+   before requesting any start.
+2. Starts only `LocalBox-Client` in `rg-localbox-nodes-san-1`. Already Running is
+   a no-op. A Starting host is observed without another start request. Stopping,
+   deallocating and unexpected states are refused.
+3. Waits for host Running and Azure VM agent Ready, bounded by `--host-timeout`
+   (default 900 seconds). This does not certify SSH availability.
+4. Uses VPN → private Premium Bastion → pinned-key SSH to validate the exact three
+   existing guest IDs, then starts the DC first, followed by NODE1 and NODE2.
+   Already Running guests are left alone. There is no DC service-readiness gate
+   between guest starts.
+5. Waits for healthy Hyper-V heartbeats from all three guests. Heartbeat means OS
+   liveness, not working AD, DNS, PowerShell Direct, Arc or Azure Local readiness.
+
+Safe to run again after a completed run. It does not reboot Running machines,
+change automatic-start settings, bypass PIM, alter nightly shutdown automation,
+register Arc nodes, delete registration markers or continue bootstrap.
+
+Every invocation retains a distinct receipt under `docs/deployment-2026-10-29/`
+and a separate private transport receipt under `docs/deployment-2026-10-27/`.
+Failures, interruptions and uncertain timeouts are retained. The command does not
+automatically replay remote operations. If it fails, inspect the named receipts
+and actual VM state before running it again. Concurrent local invocations are refused.
+
+For NODE2 bootstrap recovery, startup is followed by **inspection**, not registration:
+
+```bash
+python3 -B scripts/register-smal-node-console.py --node LB-NODE02 --inspect
+```
