@@ -65,3 +65,23 @@ python3 -B scripts/register-smal-node-console.py --node LB-NODE02 --inspect
   record all three guests changing from Off to Running.
 - Live receipts: `../deployment-2026-10-29/start-20261029-065230-91ec0efb.json`
   and `../deployment-2026-10-29/start-20261029-065252-f7c03032.json`.
+
+### Real host deallocation and Premium conversion recovery
+
+Later on 29 October, the existing disks were converted to Premium SSD while the
+host was deallocated. The startup command requested a host start, then initially
+refused a transient missing Azure PowerState during its observer loop. The original
+receipt is retained. The observer now waits within its existing bound when a
+previously accepted start briefly lacks PowerState. Missing state at the initial
+decision point still refuses a start request.
+
+After independent Running readback, a reconciled startup left the Running host
+alone and started all three existing guests from Off to Running with healthy
+heartbeats. V: and both Arc identities/bootstrap statuses were subsequently verified.
+Arc services are configured for **delayed automatic start**. Early Stopped readings
+are not a reason to register again or change their startup configuration.
+
+Reconciled startup receipt:
+`../deployment-2026-10-29/start-20261029-080708-7389325a.json`.
+Final conversion/recovery evidence:
+`../deployment-2026-10-29/premium-disk-conversion-reconciled-result.json`.

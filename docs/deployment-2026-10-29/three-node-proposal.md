@@ -19,10 +19,12 @@ This changes the previous two-node topology. No part of the old approval is rewr
 
 ## Storage changes and why
 
-Actual Azure readback shows **all nine attached disks are Standard HDD
-(`Standard_LRS`)**, not the Premium SSDs described in earlier notes. Their current
-identities and live SKUs are retained in `three-node-premium-cloud-sizing.json`. The actor
-or cause of that difference has not been established. No silent SKU correction.
+The **pre-conversion** Azure sizing snapshot recorded all nine attached disks as
+Standard HDD (`Standard_LRS`), not the Premium SSDs described in earlier notes.
+Their identities, then-current SKUs and prices are retained in
+`three-node-premium-cloud-sizing.json`. The actor or cause of that difference has
+not been established. The separately requested nine-disk Premium conversion and
+startup reconciliation are recorded in `premium-disk-conversion-reconciled-result.json`.
 
 1. Convert exactly those nine disks to **Premium_LRS**, as explicitly requested,
    preserving disk IDs, encryption, contents and capacities. This includes the 1 TiB OS disk and eight
@@ -86,7 +88,7 @@ official Retail Prices API. Not a contract quote, tax/FX assessment or spending 
 
 | Monthly capacity comparison | USD |
 |---|---:|
-| Current nine HDD disks | 176.33 |
+| Pre-conversion nine HDD disks | 176.33 |
 | Same nine converted to Premium SSD | 535.14 |
 | Additional 2 TiB Premium SSD | 315.60 |
 | Proposed total disk capacity | 850.74 |

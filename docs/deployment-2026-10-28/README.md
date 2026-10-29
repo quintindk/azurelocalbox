@@ -1,5 +1,24 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Existing disks converted to Premium SSD, 29 October
+
+The owner's explicit Premium SSD request has been applied to **all nine existing
+managed disks**. Their Azure IDs, unique IDs, sizes and encryption metadata were
+preserved. The host and the original three guests are running, V: and its existing
+pool are healthy, both local bootstrap statuses are Succeeded, and the Arc services
+are Running with unchanged Connected cloud identities. Early delayed-auto-start
+observations and both earlier CLI/startup observer failures are retained, not
+rewritten as successful attempts. See
+`../deployment-2026-10-29/premium-disk-conversion-reconciled-result.json`.
+
+No additional disk, guest resize, NODE3, witness change or cluster deployment has
+been applied. The exact [three-node proposal](../deployment-2026-10-29/three-node-proposal.md)
+is staged for separate approval. It retains the E32 host, proposes 64 GiB / 8 vCPUs
+per node, an additional 2 TiB Premium SSD and a single identified blank VHD move.
+That new disk is an additional public retail capacity reference of USD315.60/month,
+excluding other applicable charges. Existing nine-disk Premium capacity is
+USD535.14/month, not a contract quote or total platform cost.
+
 ## Cluster deployment stop, 29 October
 
 The final node/storage/AD inspection passed. Deployment is now blocked by the

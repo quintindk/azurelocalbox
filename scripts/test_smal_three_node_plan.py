@@ -12,6 +12,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_final_premium_reconciliation_keeps_three_node_plan_unapplied(self):
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/premium-disk-conversion-reconciled-result.json').read_text())
+        self.assertEqual(receipt['status'], 'complete-nine-existing-premium-disks-host-guests-storage-and-arc-verified')
+        self.assertEqual(len(receipt['disks']), 9)
+        self.assertTrue(all(row['sku'] == 'Premium_LRS' and row['state'] == 'Attached' for row in receipt['disks']))
+        self.assertEqual(receipt['host'], {'power': 'PowerState/running', 'agentReady': True})
+        self.assertEqual(len(receipt['guests']), 3)
+        self.assertTrue(all(row['state'] == 'Running' for row in receipt['guests']))
+        self.assertTrue(all(row['status'] == 'Connected' for row in receipt['arcMachines']))
+        self.assertEqual(receipt['pool']['health'], 'Healthy')
+        self.assertFalse(receipt['thirdNodePlanApplied'])
+        self.assertFalse(receipt['platformReadinessVerified'])
+        self.assertTrue(receipt['originalConversionAndStartupFailuresRetained'])
+
     def test_live_premium_conversion_preserved_existing_disk_identity_and_encryption(self):
         receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/premium-disk-conversion-after-cli-reconciliation.json').read_text())
         self.assertEqual(len(receipt['diskEffects']), 9)

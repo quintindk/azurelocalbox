@@ -118,6 +118,7 @@
   },
   "premiumStorageExplicitlyRequested": true,
   "existingNineDiskConversionSeparatelyRequested": true,
+  "existingDiskConversionOutcomeReference": "premium-disk-conversion-reconciled-result.json",
   "premiumStorageHumanInstruction": "please change the disks to Premium SSD, we need it to be performant.",
   "onDemandBurstingOrPerformancePlusRequested": false,
   "volumeBudgets": {
