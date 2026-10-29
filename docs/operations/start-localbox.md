@@ -93,3 +93,7 @@ The current startup source includes NODE3's returned VM ID
 build/cleanup/login receipt, not inferred from its name. Historical three-guest
 receipts above remain unchanged. The command now targets the DC and all three
 Azure Local guests. NODE3's Arc authentication remains a separate human step.
+
+The four-guest source passed a live no-op run at **12:22 SAST**, with all four
+heartbeats healthy and no VM start/reboot requests. Receipt:
+`../deployment-2026-10-29/start-20261029-102241-6d02b948.json`.

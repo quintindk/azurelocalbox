@@ -4,7 +4,8 @@
 
 The owner approved the hash-bound three-node plan. The added Premium disk, new-only
 W: format, existing node resizes and single VHD relocation have completed. NODE3's
-one-shot local build is in progress. This removes the **design requirement** for
+one-shot local build and cleanup/login checks have passed. Its human-auth console
+is installed, not invoked. This removes the **design requirement** for
 the two-node Cloud Witness, not the policy constraint. Shared Key remains disabled.
 See [current three-node execution](three-node-execution.md). This document retains
 the original two-node blocker, not a claim that the three-node cluster has deployed.

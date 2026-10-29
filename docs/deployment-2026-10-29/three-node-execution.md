@@ -14,7 +14,10 @@ power state or live MAC addresses. A separate live inspection must be used for
 current state. Daily startup now includes the actual fourth guest.
 
 NODE3 is **not Arc-registered yet**, and the Azure Local cluster is not deployed.
-The prepared human-auth console still needs its reviewed installation and readback.
+The human-auth console has now been installed and independently verified, status
+**installed-not-invoked**, with no authentication output capture. All four live
+guest identities/startup and all three nodes' private DNS/TLS paths passed the
+12:23 SAST inspection. See [the exact human command and verified handoff](node03-authentication-handoff.md).
 No additional approval is requested for that already authorised authentication path.
 
 ## Authority and completed effects
@@ -88,7 +91,9 @@ The bounded observer can retry its **read-only progress command** after a transp
 failure. It never dispatches, restarts or retries the worker/installer. Its cadence
 is bounded and slower than the initial monitor. This is not a recurring agent job.
 
-## Remaining gates
+## Execution sequence and remaining gates
+
+Steps 1–4 below are now complete. Step 5 is the remaining human action.
 
 1. Observe the existing task, without reinstalling. Require task exit 0, expected
    source hashes and successful OS/network/nested Hyper-V/clock checks.
@@ -97,9 +102,9 @@ is bounded and slower than the initial monitor. This is not a recurring agent jo
 3. Commit the public completion/binding evidence. Update daily startup and final
    inspection tools to the **actual** four-guest topology, not a guessed NODE3 UUID.
 4. Install the prepared pinned NODE3 human-auth console **only after completion**.
-   It has not been installed or invoked at the state recorded above. The new
+   Installation/readback have now passed; registration has not been invoked. The
    `register-smal-node03-console.py` launcher refuses headless authentication and
-   checks existing active PIM access. Do not run it before the installed receipt exists.
+   checks existing active PIM access. Its required installed receipt now exists.
 5. Human completes normal device-code/MFA. No existing owner ARM token is forwarded.
    Independently verify NODE3's actual Arc ID/identity before its three scoped roles.
 6. Re-derive the exact three-node **No Witness** settings and two platform-credential
@@ -112,9 +117,9 @@ Unexpected identity, policy, storage, privilege or cost effects still stop for r
 
 ## Source checks
 
-The regression suite passed **208 tests**, including approval hashes, new-disk
+The regression suite passed **211 tests**, including approval hashes, new-disk
 effect limits, exact generated NODE3 helpers, native heartbeat compilation,
 read-only observer scope, and headless-authentication refusal. The prepared NODE3
-console is guarded by a completion proof that does not exist until the native task
-passes cleanup and credential checks. Its installer cannot be run against a guessed
-VM UUID or incomplete setup. The console is not yet installed or invoked.
+console is guarded by the completed native task's cleanup/login proof. Its installer
+cannot be run against a guessed VM UUID or incomplete setup. The installed console
+has not invoked registration; that remains the human-terminal action above.

@@ -6,9 +6,11 @@ The exact three-node plan is approved. The additional 2 TiB Premium SSD is attac
 and verified as W:. NODE1/NODE2 are now 64 GiB / 8 vCPUs with original identities,
 bootstrap success and data IDs preserved. The single approved VHD move is verified.
 The DC, shared networking, public-access/Shared Key settings and original V: pool
-were not changed. NODE3's protected one-shot build task is running, last independently
-observed expanding the verified OS image. It has not registered NODE3 or deployed
-a cluster. See [execution evidence and remaining gates](../deployment-2026-10-29/three-node-execution.md).
+were not changed. NODE3's protected one-shot build completed with task result 0,
+cleanup and common credential login verified. All four guests are Running and the
+new daily startup includes NODE3's actual VM ID. Its human-auth console is installed,
+not invoked. Follow the [NODE3 authentication handoff](../deployment-2026-10-29/node03-authentication-handoff.md).
+The cluster is not deployed. See [execution evidence and remaining gates](../deployment-2026-10-29/three-node-execution.md).
 
 ## Existing disks converted to Premium SSD, 29 October
 

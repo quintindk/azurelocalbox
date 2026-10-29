@@ -16,6 +16,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_live_three_node_bindings_and_installed_console_are_verified_without_registration(self):
+        h = runpy.run_path(str(ROOT / 'scripts/bind-smal-three-node-identities.py'), run_name='three_node_live_bindings_test')
+        bound = h['build']()
+        self.assertEqual(bound, json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-local-identity-bindings.json').read_text()))
+        self.assertEqual(len(bound['nodes']), 3)
+        self.assertEqual(sum(len(row['s2dDataDeviceAllowlist']) for row in bound['nodes'].values()), 12)
+        self.assertIsNone(bound['node03ArcPrincipalId'])
+        self.assertFalse(bound['node03ArcRegistrationVerified'])
+        installed = json.loads((ROOT / 'docs/deployment-2026-10-29/node03-arc-console-install-receipt.json').read_text())
+        self.assertEqual(installed['status'], 'complete-installed-human-authentication-not-invoked')
+        self.assertEqual(installed['result']['vmId'], bound['nodes']['LB-NODE03']['vmId'])
+        self.assertFalse(installed['registrationInvoked'])
+        self.assertFalse(installed['result']['registrationPerformed'])
+        self.assertFalse(installed['result']['consoleOutputCaptured'])
+        startup = json.loads((ROOT / 'docs/deployment-2026-10-29/start-20261029-102241-6d02b948.json').read_text())
+        self.assertEqual(startup['status'], 'complete-host-and-four-guests-running-heartbeats-healthy')
+        self.assertEqual(len(startup['guests']), 4)
+        self.assertTrue(all(not row['startRequested'] and row['heartbeatReady'] for row in startup['guests']))
+
     def test_node03_completion_preserves_exact_new_vhd_to_guest_disk_identity(self):
         proof = json.loads((ROOT / 'docs/deployment-2026-10-29/node03-local-completion.json').read_text())
         self.assertEqual(proof['status'], 'complete-local-only-human-arc-authentication-next')
