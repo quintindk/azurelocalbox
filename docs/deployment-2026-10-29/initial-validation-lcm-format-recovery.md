@@ -184,6 +184,37 @@ one existing-settings-only Validate request under a new retained attempt identit
 No secrets, roles, cluster, edges or licences are reapplied. There is no automatic
 retry if this attempt fails, and Deploy still requires positive service success.
 
+## Gateway validation retry blocked before submission by Azure authorisation
+
+At **16:19 SAST**, fresh node/storage/AD inspection and effective-rule/echo checks
+passed, but ARM rejected the what-if request for the approved deployer with
+**AuthorizationFailed**, action **Microsoft.Resources/deployments/whatIf/action**.
+The Azure CLI additionally raised `The content for this response was already consumed`,
+obscuring the actual ARM error. A diagnostic-only what-if reproduced the denial.
+No Validate PUT was submitted and no gateway-retry or Deploy ARM deployment exists.
+The live cluster remains at the previous **ValidationFailed** state, settings mode
+Validate, provisioning Failed, reported validation Error.
+
+The gateway firewall correction remains applied and its three-node echo checks passed.
+The failure is now an operator authorisation blocker, not evidence that the corrected
+service network test has run or failed again. No privilege activation, new role grant,
+login/session reset or resource replay was attempted. The human must restore the
+existing authorised deployment access/session before continuation. Restored access
+must be tested without bypassing what-if or granting broader permissions.
+
+The original unsubmitted refusal and both original validation failures are retained.
+Any later recovery must reconcile the original gateway-retry deployment identity and
+retain the refused receipt, rather than deleting it or inventing a second service
+attempt. It must repeat current non-deployment state, source/configuration, credential
+metadata and local network/storage/AD checks before its single permitted submission.
+
+Evidence:
+
+- `three-node-cluster-validate-after-gateway-echo-receipt.json`.
+- `gateway-validation-preview-reconciliation.json` (redacted error and fingerprint).
+- `gateway-validation-unsubmitted-auth-reconciliation.json` (read-only absence/state proof).
+- Fresh private input and pre-retry network observations.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

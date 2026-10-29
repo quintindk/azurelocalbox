@@ -11,6 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_gateway_retry_authorization_refusal_is_retained_and_unsubmitted(self):
+        out = ROOT / 'docs/deployment-2026-10-29'
+        refused = json.loads((out / 'three-node-cluster-validate-after-gateway-echo-receipt.json').read_text())
+        self.assertEqual(refused['status'],'failed-inspect-before-resume')
+        self.assertNotIn('deploymentId',refused)
+        self.assertNotIn('previewChanges',refused)
+        self.assertFalse(refused['deploySubmitted'])
+        actual = json.loads((out / 'gateway-validation-unsubmitted-auth-reconciliation.json').read_text())
+        self.assertEqual(actual['gatewayRetryOrDeployArmRecords'],[])
+        self.assertEqual(actual['errorCode'],'AuthorizationFailed')
+        self.assertEqual(actual['deniedAction'],'Microsoft.Resources/deployments/whatIf/action')
+        self.assertFalse(actual['azureMutationPerformed'])
+        self.assertFalse(actual['privilegeActivationAttempted'])
     def test_gateway_retry_requires_successful_probes_and_exact_effective_rule(self):
         h = runpy.run_path(str(ROOT / 'scripts/retry-smal-initial-validation.py'),run_name='gateway_retry_guard_test')
         fix = json.loads((ROOT / 'docs/deployment-2026-10-29/gateway-echo-rule-receipt.json').read_text())
