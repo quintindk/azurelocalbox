@@ -1,6 +1,8 @@
 """Offline three-node sizing and read-only inventory boundaries."""
 from pathlib import Path
 import copy
+import base64
+import hashlib
 from decimal import Decimal
 import json
 import runpy
@@ -12,6 +14,48 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_exact_three_node_approval_hashes_and_public_context(self):
+        out = ROOT / 'docs/deployment-2026-10-29'
+        consent = json.loads((out / 'three-node-approval.json').read_text())
+        self.assertTrue(consent['approved'])
+        self.assertEqual(consent['humanAnswer'], 'Approved')
+        for suffix, key in [('json', 'proposalJsonSha256'), ('md', 'proposalMarkdownSha256')]:
+            self.assertEqual(hashlib.sha256((out / ('three-node-proposal.' + suffix)).read_bytes()).hexdigest(), consent[key])
+        h = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'), run_name='three_node_context_test')
+        disk = {'id': h['DISK_ID'], 'uniqueId': '11111111-1111-4111-8111-111111111111', 'diskSizeGB': 2048, 'sku': {'name': 'Premium_LRS'}}
+        context = h['context'](disk)
+        self.assertEqual(base64.b64decode(context['approvalBase64']), (out / 'three-node-approval.json').read_bytes())
+        self.assertEqual(context['lun'], 8)
+        disk['diskSizeGB'] = 4096
+        with self.assertRaises(RuntimeError): h['context'](disk)
+
+    def test_new_disk_template_and_preview_cannot_modify_existing_storage(self):
+        h = runpy.run_path(str(ROOT / 'scripts/apply-smal-three-node-disk.py'), run_name='new_disk_test')
+        data = {'status': 'Succeeded', 'changes': [{'changeType': 'Create', 'resourceId': h['DISK_ID'], 'after': {'type': 'Microsoft.Compute/disks', 'location': 'southafricanorth', 'sku': {'name': 'Premium_LRS'}, 'properties': {'diskSizeGB': 2048, 'creationData': {'createOption': 'Empty'}, 'networkAccessPolicy': 'DenyAll', 'publicNetworkAccess': 'Disabled'}}}]}
+        h['validate_preview'](data, set())
+        for key, value in [('diskSizeGB', 4096), ('publicNetworkAccess', 'Enabled')]:
+            bad = copy.deepcopy(data); bad['changes'][0]['after']['properties'][key] = value
+            with self.assertRaises(RuntimeError): h['validate_preview'](bad, set())
+        bad = copy.deepcopy(data); bad['changes'][0]['changeType'] = 'Modify'
+        with self.assertRaises(RuntimeError): h['validate_preview'](bad, set())
+        result = subprocess.run(['az', 'bicep', 'build', '--file', str(ROOT / h['TEMPLATE']), '--stdout', '--only-show-errors'], check=True, capture_output=True, text=True, timeout=90)
+        template = json.loads(result.stdout)
+        self.assertEqual(len(template['resources']), 1)
+        self.assertEqual(template['resources'][0]['type'], 'Microsoft.Compute/disks')
+        self.assertEqual(template['resources'][0]['properties']['diskSizeGB'], 2048)
+
+    def test_new_disk_admission_scripts_parse_and_never_target_disk_zero_or_pool_format(self):
+        for name in ['smal-three-node-prelude.ps1', 'prepare-smal-node03-disk.ps1', 'format-smal-node03-disk.ps1']:
+            path = ROOT / 'scripts' / name
+            code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+            subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+        source = (ROOT / 'scripts/format-smal-node03-disk.ps1').read_text()
+        self.assertIn('Initialize-Disk -UniqueId $record.windowsUniqueId', source)
+        self.assertIn('$newPhysical.Count -eq 1', source)
+        self.assertIn('$disk.IsBoot -or $disk.IsSystem', source)
+        for forbidden in ['-DiskNumber 0', 'New-StoragePool', 'New-VirtualDisk', 'Clear-Disk', 'Resize-VirtualDisk']:
+            self.assertNotIn(forbidden, source)
+
     def test_final_premium_reconciliation_keeps_three_node_plan_unapplied(self):
         receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/premium-disk-conversion-reconciled-result.json').read_text())
         self.assertEqual(receipt['status'], 'complete-nine-existing-premium-disks-host-guests-storage-and-arc-verified')

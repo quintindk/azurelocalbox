@@ -97,7 +97,7 @@ def render_arc_console(installer, console, approval, commit):
             .replace('__APPROVAL_SHA256__', approval_hash).replace('__SOURCE_COMMIT__', commit).encode('utf-8'))
 
 
-def main(script, name, envelope_key=None):
+def main(script, name, envelope_key=None, three_node_context=None):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
     target = OUT / f'private-ssh-{name}.json'
@@ -133,6 +133,19 @@ def main(script, name, envelope_key=None):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
+    three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1'}
+    if relative in three_node_scripts:
+        guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'), run_name='three_node_transport_guard')
+        guard['source_guard']([relative, 'scripts/smal-private-powershell.py', 'scripts/smal-three-node-prelude.ps1'])
+        if (not isinstance(three_node_context, dict) or set(three_node_context) != {'diskId', 'azureDiskUniqueId', 'lun', 'proposalBase64', 'approvalBase64'}
+                or three_node_context.get('diskId', '').lower() != guard['DISK_ID'].lower() or three_node_context.get('lun') != 8): raise RuntimeError('Exact three-node public context missing')
+        for key, path in [('proposalBase64', 'three-node-proposal.json'), ('approvalBase64', 'three-node-approval.json')]:
+            if base64.b64decode(three_node_context[key], validate=True) != (guard['OUT'] / path).read_bytes(): raise RuntimeError('Context proposal/approval differs')
+        public = json.dumps(three_node_context, sort_keys=True).encode()
+        prelude = (ROOT / 'scripts/smal-three-node-prelude.ps1').read_text().replace('__THREE_NODE_CONTEXT_BASE64__', base64.b64encode(public).decode()).replace('__THREE_NODE_CONTEXT_SHA256__', hashlib.sha256(public).hexdigest().upper()).replace('__SOURCE_COMMIT__', head)
+        source = source.decode().replace('__THREE_NODE_PRELUDE__', prelude).encode()
+    elif three_node_context is not None:
+        raise RuntimeError('Public three-node context is only accepted for approved phase scripts')
     if relative in ['scripts/start-smal-storage-job.ps1', 'scripts/recover-smal-storage-job.ps1']:
         def exact_bytes(name):
             data = (ROOT / name).read_bytes()
@@ -339,6 +352,8 @@ def main(script, name, envelope_key=None):
                      'scripts/inspect-smal-arc-registration.ps1': 180,
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,
                      'scripts/stop-smal-guests-for-premium.ps1': 240,
+                     'scripts/format-smal-node03-disk.ps1': 240,
+                     'scripts/resize-smal-existing-nodes.ps1': 1500,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
                      'scripts/activate-smal-dc-evaluation.ps1': 300,
                      'scripts/prepare-smal-cluster-prereqs.ps1': 600,
