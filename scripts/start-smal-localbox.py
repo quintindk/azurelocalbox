@@ -64,9 +64,11 @@ def host_state():
         raise RuntimeError('Exact outer host identity differs.')
     view = data.get('instanceView', {})
     powers = [row['code'] for row in view.get('statuses', []) if row.get('code', '').startswith('PowerState/')]
-    if len(powers) != 1:
-        raise RuntimeError('Outer host power state missing or ambiguous.')
-    return {'power': powers[0], 'agentReady': any(row.get('code') == 'ProvisioningState/succeeded'
+    if len(powers) > 1:
+        raise RuntimeError('Outer host power state ambiguous.')
+    # Azure can briefly omit PowerState after accepting a start request. Unknown
+    # never authorises a start, but the bounded post-request observer can wait.
+    return {'power': powers[0] if powers else 'PowerState/unknown', 'agentReady': any(row.get('code') == 'ProvisioningState/succeeded'
                                                for row in view.get('vmAgent', {}).get('statuses', []))}
 
 

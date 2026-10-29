@@ -23,6 +23,21 @@ class StartupTests(unittest.TestCase):
             self.scope['az'].assert_not_called()
         self.assertFalse(record['hostStartRequested'])
 
+    def test_missing_power_state_during_start_is_observed_not_restarted(self):
+        scope = self.h['host_state'].__globals__
+        with patch.dict(scope, az=Mock(return_value={'id': self.h['VM_ID'], 'instanceView': {'statuses': [{'code': 'ProvisioningState/updating'}]}})):
+            self.assertEqual(self.h['host_state'](), {'power': 'PowerState/unknown', 'agentReady': False})
+        unknown = {'power': 'PowerState/unknown', 'agentReady': False}
+        ready = {'power': 'PowerState/running', 'agentReady': True}
+        clock = Mock(); clock.monotonic.return_value = 0
+        command = Mock()
+        with patch.dict(self.scope, az=command, host_state=Mock(side_effect=[unknown, ready]), time=clock):
+            self.h['ensure_host']({'power': 'PowerState/starting', 'agentReady': False}, 60, {}, Mock())
+        command.assert_not_called(); clock.sleep.assert_called_once_with(10)
+        with patch.dict(self.scope, az=command):
+            with self.assertRaises(RuntimeError): self.h['ensure_host'](unknown, 60, {}, Mock())
+        command.assert_not_called()
+
     def test_stopped_host_gets_exactly_one_start_then_waits(self):
         for power in ['PowerState/stopped', 'PowerState/deallocated']:
             initial = {'power': power, 'agentReady': False}
