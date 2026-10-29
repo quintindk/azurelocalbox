@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_gateway_echo_rule_has_exact_human_scope_and_no_existing_rule_changes(self):
+        approval = json.loads((ROOT / 'docs/deployment-2026-10-29/gateway-echo-rule-approval.json').read_text())
+        self.assertTrue(approval['approved'])
+        self.assertEqual(approval['humanAnswer'],'Approve scoped echo rule')
+        self.assertEqual(approval['localAddress'],'10.64.0.1')
+        self.assertEqual(approval['remoteAddress'],['10.64.0.11-10.64.0.13','10.64.0.20-10.64.0.30'])
+        path = ROOT / 'scripts/allow-smal-internal-gateway-echo.ps1'
+        source = path.read_text()
+        self.assertEqual(source.count('New-NetFirewallRule'),1)
+        for forbidden in ['Set-NetFirewall','Enable-NetFirewallRule','Disable-NetFirewallRule','Remove-NetFirewallRule','Set-VMNetwork','Set-NetIPAddress','New-NetIPAddress']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn("-LocalAddress '10.64.0.1' -RemoteAddress $sources",source)
+        self.assertIn('-InterfaceAlias $interface',source)
+        self.assertIn('-Protocol ICMPv4 -IcmpType 8',source)
+        self.assertIn('Read-ExactEchoRule -PolicyStore ActiveStore',source)
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',code],check=True,capture_output=True,timeout=30)
+
     def test_gateway_failure_proof_distinguishes_echo_from_layer_two_connectivity(self):
         proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-infra-network-failure-20261029.json').read_text())
         self.assertEqual(proof['status'],'complete')

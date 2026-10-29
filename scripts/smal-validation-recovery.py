@@ -6,6 +6,7 @@ import runpy
 ROOT = Path(__file__).resolve().parents[1]
 D = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='initial_validation_recovery_reads')
 ERROR = 'Domain user credential object cannot contain domain name as part of Username.'
+NETWORK_ERROR = 'NetworkInfraConnection requirements not met. Review output and remediate.'
 
 
 def exceptions(action):
@@ -15,7 +16,7 @@ def exceptions(action):
     return result
 
 
-def verify_initial_validation(cluster,settings,deployments):
+def verify_initial_validation(cluster,settings,deployments,expected_error=ERROR):
     cp = cluster['properties']; props = settings['properties']; reported = props.get('reportedProperties') or {}
     validation = reported.get('validationStatus') or {}; deployed = reported.get('deploymentStatus') or {}
     if (cluster['id'].lower() != D['CLUSTER'].lower() or cp.get('status') != 'ValidationFailed' or cp.get('provisioningState') != 'Succeeded'
@@ -25,12 +26,12 @@ def verify_initial_validation(cluster,settings,deployments):
             or deployed.get('status') not in [None,'','NotStarted'] or deployed.get('steps') or deployments):
         raise RuntimeError('Not the exact terminal initial-validation failure. Never retry Validate after deployment starts/fails.')
     errors = exceptions(validation)
-    if not errors or any(ERROR not in str(item) for item in errors): raise RuntimeError('Current failure does not match the one diagnosed LCM-format error')
+    if expected_error not in [ERROR,NETWORK_ERROR] or not errors or any(expected_error not in str(item) for item in errors): raise RuntimeError('Current failure does not match the exact diagnosed validation error')
     return {'clusterStatus':cp['status'],'mode':props['deploymentMode'],'provisioningState':props['provisioningState'],'validationStatus':validation['status'],
-            'deploymentStatus':deployed.get('status'),'deployArmRecords':deployments,'knownLcmFormatErrorMatched':True}
+            'deploymentStatus':deployed.get('status'),'deployArmRecords':deployments,'knownLcmFormatErrorMatched':expected_error == ERROR,'knownInfraNetworkErrorMatched':expected_error == NETWORK_ERROR}
 
 
-def current_failure():
+def current_failure(expected_error=ERROR):
     cluster = D['L']['rest'](D['CLUSTER']); settings = D['L']['rest'](D['SETTINGS'])
     deployments = D['az'](['deployment','group','list','--subscription',D['SUB'],'-g',D['RG'],'--query',"[?name=='localbox-three-node-deploy-20261029'].name"])
-    return verify_initial_validation(cluster,settings,deployments)
+    return verify_initial_validation(cluster,settings,deployments,expected_error)

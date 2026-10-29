@@ -130,6 +130,12 @@ def main(script, name, envelope_key=None, three_node_context=None):
     committed = subprocess.check_output(['git', 'show', 'HEAD:' + relative], cwd=ROOT)
     if committed != source:
         raise RuntimeError('Script differs from committed source')
+    if relative == 'scripts/allow-smal-internal-gateway-echo.ps1':
+        guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'),run_name='gateway_echo_approval_guard')
+        approval_path = 'docs/deployment-2026-10-29/gateway-echo-rule-approval.json'
+        guard['source_guard']([relative,'scripts/smal-private-powershell.py',approval_path])
+        approval_bytes = (ROOT / approval_path).read_bytes()
+        source = source.decode().replace('__GATEWAY_ECHO_APPROVAL_BASE64__',base64.b64encode(approval_bytes).decode()).replace('__GATEWAY_ECHO_APPROVAL_SHA256__',hashlib.sha256(approval_bytes).hexdigest().upper()).encode()
     if relative in ['scripts/seal-smal-platform-credentials.ps1','scripts/seal-smal-lcm-format-fix.ps1']:
         if (not isinstance(envelope_key, dict) or set(envelope_key) != {'modulus', 'nonce'}
                 or not re.fullmatch(r'[0-9a-f]{32}', envelope_key['nonce'])
