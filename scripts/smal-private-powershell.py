@@ -338,6 +338,7 @@ def main(script, name, envelope_key=None):
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,
+                     'scripts/stop-smal-guests-for-premium.ps1': 240,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
                      'scripts/activate-smal-dc-evaluation.ps1': 300,
                      'scripts/prepare-smal-cluster-prereqs.ps1': 600,
