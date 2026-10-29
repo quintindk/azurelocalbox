@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_completed_lcm_correction_retains_original_and_changes_no_password_or_account(self):
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/lcm-credential-format-correction-receipt.json').read_text())
+        self.assertEqual(receipt['status'],'complete-one-lcm-username-format-version-only')
+        self.assertTrue(receipt['originalQualifiedValueMatchedHostCredential'])
+        self.assertTrue(receipt['unqualifiedCredentialReadbackMatched'])
+        self.assertEqual({row['id'] for row in receipt['versionsRetained']},{receipt['originalVersionId'],receipt['newVersionId']})
+        self.assertTrue(all(row['enabled'] for row in receipt['versionsRetained']))
+        for field in ['passwordRotated','adAccountChanged','localAdminSecretChanged','clusterRecreated','validateInvoked','ownerArmTokenForwarded','publicAccessChanged']:
+            self.assertFalse(receipt[field])
+        self.assertEqual(receipt['vaultPublicAccessAfter'],'Disabled')
+
     def test_validation_diagnostics_redact_credential_encodings_tokens_and_queries(self):
         h = runpy.run_path(str(ROOT / 'scripts/diagnose-smal-three-node-validation.py'),run_name='diagnostic_redaction_test')
         credential = 'A1!b' * 10

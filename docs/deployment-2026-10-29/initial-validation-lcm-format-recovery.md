@@ -78,6 +78,18 @@ edges, roles, secrets, storage or licences. Original attempts/secret versions re
 No automatic repeated retry or Deploy is permitted on failure. Deploy still requires
 positive current reported service validation/step success, not ARM acceptance alone.
 
+## Correction completed
+
+At **14:49 SAST on 29 October 2026**, the guarded correction completed. Private
+readback matched the unqualified username and unchanged host-bound password.
+Exactly two enabled versions remain, including the original. The AD account,
+local-admin secret and cluster were unchanged, and vault public access remained
+Disabled. No Validate or Deploy was invoked by the correction.
+
+Evidence: `lcm-credential-format-correction-receipt.json`, the encrypted LCM-only
+transport receipt and fresh private node/storage/AD inspection. The initial failed
+validation receipt remains unchanged. Service validation has not yet passed.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).
