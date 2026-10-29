@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArcConsoleTests(unittest.TestCase):
+    def test_registration_diagnostic_exports_only_structured_log_facts(self):
+        path = ROOT / 'scripts/inspect-smal-arc-registration.ps1'
+        source = path.read_text()
+        self.assertIn('rawLinesExported = $false', source)
+        self.assertIn('mutationPerformed = $false', source)
+        self.assertIn('Get-Content -LiteralPath $path -Tail 3000', source)
+        for forbidden in ['azcmagent.exe" connect', 'Get-AzAccessToken', 'Start-Transcript', 'Remove-Item', 'Invoke-AzStackHciArcInitialization -']:
+            self.assertNotIn(forbidden, source)
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+
     def test_powershell_scripts_parse(self):
         for name in ['register-smal-node-console.ps1', 'install-smal-arc-console.ps1']:
             code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(ROOT / 'scripts' / name) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"

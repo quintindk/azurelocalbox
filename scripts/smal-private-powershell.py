@@ -325,6 +325,7 @@ def main(script, name):
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/start-smal-existing-guests.ps1': 360,
+                     'scripts/inspect-smal-arc-registration.ps1': 180,
                      'scripts/inspect-smal-guest-deployment-readiness.ps1': 300,
                      'scripts/activate-smal-dc-evaluation.ps1': 300,
                      'scripts/prepare-smal-cluster-prereqs.ps1': 600,
