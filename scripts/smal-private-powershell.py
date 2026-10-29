@@ -144,6 +144,20 @@ def main(script, name, envelope_key=None, three_node_context=None):
         public = json.dumps(three_node_context, sort_keys=True).encode()
         prelude = (ROOT / 'scripts/smal-three-node-prelude.ps1').read_text().replace('__THREE_NODE_CONTEXT_BASE64__', base64.b64encode(public).decode()).replace('__THREE_NODE_CONTEXT_SHA256__', hashlib.sha256(public).hexdigest().upper()).replace('__SOURCE_COMMIT__', head)
         source = source.decode().replace('__THREE_NODE_PRELUDE__', prelude).encode()
+        if relative == 'scripts/install-smal-node03-job.ps1':
+            dependencies = ['scripts/derive-smal-node03-helpers.py', 'scripts/smal-node03-worker.ps1',
+                            'scripts/smal-guest-secret-functions.ps1', 'scripts/smal-guest-image-functions.ps1', 'scripts/smal-guest-vm-functions.ps1', 'scripts/smal-guest-direct-functions.ps1']
+            derived = runpy.run_path(str(ROOT / 'scripts/derive-smal-node03-helpers.py'), run_name='node03_helper_derivation')['build']()
+            for name, text in derived.items():
+                path = 'scripts/node03/' + name
+                if (ROOT / path).read_text() != text: raise RuntimeError('NODE3 generated helper differs from reviewed derivation')
+                dependencies.append(path)
+            guard['source_guard'](dependencies)
+            bundle = json.dumps({'schemaVersion': 1, 'files': [{'name': name, 'sha256': hashlib.sha256(text.encode()).hexdigest().upper(), 'base64': base64.b64encode(text.encode()).decode()} for name, text in sorted(derived.items())]}, sort_keys=True, separators=(',', ':')).encode()
+            bundle_hash = hashlib.sha256(bundle).hexdigest().upper()
+            worker = (ROOT / 'scripts/smal-node03-worker.ps1').read_text().replace('__SOURCE_COMMIT__', head).replace('__NODE03_BUNDLE_SHA256__', bundle_hash).replace('__NODE03_APPROVAL_SHA256__', hashlib.sha256((guard['OUT'] / 'three-node-approval.json').read_bytes()).hexdigest().upper()).encode()
+            source = (source.decode().replace('__NODE03_BUNDLE_BASE64__', base64.b64encode(bundle).decode()).replace('__NODE03_BUNDLE_SHA256__', bundle_hash)
+                      .replace('__NODE03_WORKER_BASE64__', base64.b64encode(worker).decode()).replace('__NODE03_WORKER_SHA256__', hashlib.sha256(worker).hexdigest().upper()).encode())
     elif three_node_context is not None:
         raise RuntimeError('Public three-node context is only accepted for approved phase scripts')
     if relative in ['scripts/start-smal-storage-job.ps1', 'scripts/recover-smal-storage-job.ps1']:

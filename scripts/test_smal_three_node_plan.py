@@ -6,6 +6,7 @@ import hashlib
 from decimal import Decimal
 import json
 import runpy
+import re
 import subprocess
 import unittest
 from unittest.mock import Mock, patch
@@ -14,6 +15,46 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_node03_helpers_are_exact_derivations_with_no_forest_creation(self):
+        h = runpy.run_path(str(ROOT / 'scripts/derive-smal-node03-helpers.py'), run_name='node03_derive_test')
+        for name, source in h['build']().items():
+            path = ROOT / 'scripts/node03' / name
+            self.assertEqual(path.read_text(), source)
+            code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+            subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+        self.assertNotIn('Install-ADDSForest', h['build']()['node03-direct.ps1'])
+        self.assertNotIn('Set-ADAccountPassword', h['build']()['node03-direct.ps1'])
+        self.assertIn("'LB-NODE03' = @{ memory = 64GB; processors = 8; nested = $true }", h['build']()['node03-vm.ps1'])
+        self.assertIn('W:\\AzureLocalBox\\Guests\\three-node-20261029-01\\', h['build']()['node03-image.ps1'])
+
+    def test_resize_job_and_worker_parse_and_keep_registration_out_of_local_work(self):
+        for name in ['resize-smal-existing-nodes.ps1', 'install-smal-node03-job.ps1', 'smal-node03-worker.ps1', 'read-smal-node03-job.ps1']:
+            path = ROOT / 'scripts' / name
+            code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+            subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', code], check=True, capture_output=True, timeout=30)
+            self.assertNotIn('Invoke-AzStackHciArcInitialization', path.read_text())
+        resize = (ROOT / 'scripts/resize-smal-existing-nodes.ps1').read_text()
+        self.assertIn('-RetainVhdCopiesOnSource', resize)
+        self.assertIn('relocationSourceSha256', resize)
+        self.assertIn('Remove-Item -LiteralPath $move.source', resize)
+        self.assertNotIn('Format-Volume', resize)
+        self.assertNotIn('-TurnOff', resize)
+        installer = (ROOT / 'scripts/install-smal-node03-job.ps1').read_text()
+        self.assertNotIn('-Trigger', installer)
+        self.assertNotIn('-AtStartup', installer)
+        self.assertNotIn('RestartCount', installer)
+        worker = (ROOT / 'scripts/smal-node03-worker.ps1').read_text()
+        self.assertIn('[IO.FileMode]::CreateNew', worker)
+        self.assertIn('Complete-LabGuestBootstrapSecret', worker)
+        self.assertIn("-Role 'cluster-node-admin'", worker)
+        self.assertIn('Inspect before another attempt to avoid account lockout.', (ROOT / 'scripts/node03/node03-direct.ps1').read_text())
+
+    def test_node03_native_heartbeat_compiles_without_starting_it(self):
+        worker = (ROOT / 'scripts/smal-node03-worker.ps1').read_text()
+        code = re.search("Add-Type -TypeDefinition @'\\n(.*?)\\n'@", worker, re.S).group(1)
+        encoded = base64.b64encode(code.encode()).decode()
+        subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', "Add-Type -TypeDefinition ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "')))"], capture_output=True, text=True, check=True, timeout=30)
+
     def test_exact_three_node_approval_hashes_and_public_context(self):
         out = ROOT / 'docs/deployment-2026-10-29'
         consent = json.loads((out / 'three-node-approval.json').read_text())
