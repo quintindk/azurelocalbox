@@ -1,5 +1,14 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
+## Cluster deployment stop, 29 October
+
+The final node/storage/AD inspection passed. Deployment is now blocked by the
+**two-node Cloud Witness authentication design**, not by the private vault. The
+witness rejects key-authenticated requests with `KeyBasedAuthenticationNotPermitted`,
+and the owner confirmed Shared Key will not be permitted by policy. No enable,
+exemption, credential upload, cluster creation or No Witness substitution was
+attempted. See [evidence, prepared code and required design decision](../deployment-2026-10-29/cluster-deployment-status.md).
+
 ## 29 October: both Arc nodes verified, scoped platform roles applied
 
 Both node bootstrap statuses are independently verified **Succeeded** and both Arc
