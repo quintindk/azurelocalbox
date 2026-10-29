@@ -6,11 +6,22 @@ import json
 import runpy
 import subprocess
 import unittest
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_entra_reads_omit_subscription_but_disk_commands_keep_it(self):
+        h = runpy.run_path(str(ROOT / 'scripts/convert-smal-host-premium.py'), run_name='premium_cli_test')
+        scope = h['az'].__globals__
+        process = Mock(return_value=Mock(stdout='null'))
+        with patch.dict(scope, subprocess=Mock(run=process)):
+            h['az'](['ad', 'signed-in-user', 'show'])
+            self.assertNotIn('--subscription', process.call_args.args[0])
+            h['az'](['disk', 'list'])
+            self.assertIn('--subscription', process.call_args.args[0])
+
     def test_proposed_three_node_capacity_and_premium_scope_are_bounded(self):
         h = runpy.run_path(str(ROOT / 'scripts/plan-smal-three-node.py'), run_name='three_node_plan_test')
         proposal = h['build']()

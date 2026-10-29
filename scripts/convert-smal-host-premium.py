@@ -5,6 +5,8 @@ One create-only run receipt. Partial/uncertain operations are not automatically
 replayed or rolled back. Existing guests are gracefully stopped before the host.
 """
 from datetime import datetime, timezone
+import argparse
+import hashlib
 import json
 from pathlib import Path
 import runpy
@@ -19,7 +21,9 @@ VM_ID = '/subscriptions/' + SUB + '/resourceGroups/' + RG + '/providers/Microsof
 
 
 def az(args, timeout=120):
-    result = subprocess.run(['az', *args, '--subscription', SUB, '--only-show-errors', '--output', 'json'], check=True, capture_output=True, text=True, timeout=timeout)
+    # Entra (az ad) commands reject --subscription. ARM commands remain explicit.
+    subscription = [] if args[0] == 'ad' else ['--subscription', SUB]
+    result = subprocess.run(['az', *args, *subscription, '--only-show-errors', '--output', 'json'], check=True, capture_output=True, text=True, timeout=timeout)
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
@@ -54,12 +58,23 @@ def source_guard():
     return head
 
 
-def main():
+def main(resume_cli=False):
     head = source_guard()
-    path = OUT / 'premium-disk-conversion-receipt.json'
+    path = OUT / ('premium-disk-conversion-after-cli-reconciliation.json' if resume_cli else 'premium-disk-conversion-receipt.json')
     record = {'beganAtUtc': datetime.now(timezone.utc).isoformat(), 'sourceCommit': head, 'status': 'pending', 'phase': 'preflight',
               'targetSku': 'Premium_LRS', 'newDisksCreated': False, 'diskSizesChanged': False, 'guestProfilesChanged': False,
               'policyOrShutdownAutomationChanged': False, 'platformReadinessVerified': False, 'diskEffects': []}
+    if resume_cli:
+        prior_path = OUT / 'premium-disk-conversion-receipt.json'
+        prior_bytes = prior_path.read_bytes()
+        if prior_bytes != subprocess.check_output(['git', 'show', 'HEAD:' + str(prior_path.relative_to(ROOT))], cwd=ROOT): raise RuntimeError('Original preflight failure receipt must be committed')
+        prior = json.loads(prior_bytes)
+        if (prior.get('status') != 'failed-inspect-before-resume' or prior.get('phase') != 'preflight'
+                or prior.get('errorType') != 'CalledProcessError' or prior.get('diskEffects') != []
+                or 'hostPowerBefore' in prior or 'disksBefore' in prior):
+            raise RuntimeError('No exact zero-effect CLI preflight refusal to reconcile')
+        record['originalZeroEffectFailureRetained'] = True
+        record['originalReceiptSha256'] = hashlib.sha256(prior_bytes).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record, indent=2) + '\n')
     def save(): path.write_text(json.dumps(record, indent=2) + '\n')
     try:
@@ -117,4 +132,6 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--resume-after-cli-reconciliation', action='store_true')
+    raise SystemExit(main(parser.parse_args().resume_after_cli_reconciliation))
