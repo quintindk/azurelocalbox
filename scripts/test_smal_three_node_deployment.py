@@ -11,6 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_corrected_validation_observer_requires_exact_retained_pending_request(self):
+        h = runpy.run_path(str(ROOT / 'scripts/observe-smal-corrected-validation.py'),run_name='validation_observer_test')
+        prior = json.loads((ROOT / h['ORIGINAL']).read_text())
+        self.assertEqual(h['verify_original'](prior),prior['templateSha256'])
+        for field,value in [('deploymentName','different'),('deploymentState','Succeeded'),('deploySubmitted',True),('templateSha256','changed')]:
+            bad = copy.deepcopy(prior); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_original'](bad)
+        source = (ROOT / 'scripts/observe-smal-corrected-validation.py').read_text()
+        self.assertNotIn("'create'",source)
+        self.assertNotIn("'put'",source)
+        self.assertNotIn("'update'",source)
+        self.assertIn("'azureMutationPerformed':False",source)
+
     def test_completed_lcm_correction_retains_original_and_changes_no_password_or_account(self):
         receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/lcm-credential-format-correction-receipt.json').read_text())
         self.assertEqual(receipt['status'],'complete-one-lcm-username-format-version-only')

@@ -90,6 +90,20 @@ Evidence: `lcm-credential-format-correction-receipt.json`, the encrypted LCM-onl
 transport receipt and fresh private node/storage/AD inspection. The initial failed
 validation receipt remains unchanged. Service validation has not yet passed.
 
+## Corrected validation still running after observer timeout
+
+The single corrected Validate request was submitted with a **NoChange** what-if
+for the existing settings. Its observer ended at **15:22 SAST**, retaining ARM
+state Running. A subsequent read confirmed **ValidationInProgress**, not failure.
+Remote management, connectivity, external AD, SBE health, hardware and network
+configuration reported Success. Infrastructure network connection validation was
+InProgress, with later checks pending and no reported exceptions.
+
+`scripts/observe-smal-corrected-validation.py` observes only this existing request
+and writes a separate observation receipt. It cannot submit Validate or Deploy.
+The timeout receipt remains intact. Deploy stays blocked until both ARM and the
+reported service validation positively succeed for the same template hash.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).
