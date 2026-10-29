@@ -34,8 +34,12 @@ $results = @(foreach ($target in $targets) {
                    exceptionTypes = @($item.Errors | Where-Object { $_ } | ForEach-Object { [string]$_.ExceptionType });
                    children = @($item.DetailedResponse | Where-Object { $_ } | ForEach-Object { Select-BootstrapStatus $_ }) }
             }
-            $result = @{ name = $env:COMPUTERNAME; atUtc = [datetime]::UtcNow.ToString('o'); bootstrap = $null; agentLog = $null;
-                         services = @(Get-Service -Name himds,GCArcService,ExtensionService -ErrorAction SilentlyContinue | ForEach-Object { @{ name = $_.Name; status = $_.Status.ToString() } }) }
+            $os = Get-CimInstance Win32_OperatingSystem
+            $result = @{ name = $env:COMPUTERNAME; atUtc = [datetime]::UtcNow.ToString('o'); lastBootUtc = $os.LastBootUpTime.ToUniversalTime().ToString('o'); bootstrap = $null; agentLog = $null;
+                         services = @(Get-CimInstance Win32_Service -Filter "Name='himds' OR Name='GCArcService' OR Name='ExtensionService'" | ForEach-Object {
+                             $delayed = (Get-ItemProperty -LiteralPath ('HKLM:\SYSTEM\CurrentControlSet\Services\' + $_.Name) -Name DelayedAutoStart -ErrorAction SilentlyContinue).DelayedAutoStart
+                             @{ name = $_.Name; status = $_.State; startMode = $_.StartMode; delayedAutoStart = $delayed; exitCode = $_.ExitCode; serviceSpecificExitCode = $_.ServiceSpecificExitCode; processId = $_.ProcessId }
+                         }) }
             if (Get-Command Get-ArcBootstrapStatus -ErrorAction SilentlyContinue) {
                 try { $status = Get-ArcBootstrapStatus; $result.bootstrap = Select-BootstrapStatus $status.Response }
                 catch { $result.bootstrapReadErrorType = $_.Exception.GetType().Name }

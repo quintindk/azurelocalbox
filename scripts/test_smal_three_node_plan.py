@@ -12,6 +12,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodePlanTests(unittest.TestCase):
+    def test_live_premium_conversion_preserved_existing_disk_identity_and_encryption(self):
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/premium-disk-conversion-after-cli-reconciliation.json').read_text())
+        self.assertEqual(len(receipt['diskEffects']), 9)
+        self.assertEqual(len(receipt['disksAfter']), 9)
+        self.assertTrue(all(row['sku'] == 'Premium_LRS' for row in receipt['disksAfter']))
+        before = {row['id']: row for row in receipt['disksBefore']}
+        for row in receipt['disksAfter']:
+            for key in ['uniqueId', 'diskSizeGB', 'encryptionType', 'diskEncryptionSetId', 'securityType']:
+                self.assertEqual(row.get(key), before[row['id']].get(key))
+        self.assertFalse(receipt['newDisksCreated'])
+        self.assertFalse(receipt['guestProfilesChanged'])
+        # Preserve the truthful original restore failure. Later successful startup
+        # is independent evidence, not a rewrite of the partial run receipt.
+        self.assertEqual(receipt['phase'], 'restore-existing-host-and-guests')
+        self.assertEqual(receipt['status'], 'failed-inspect-before-resume')
+        restored = json.loads((ROOT / 'docs/deployment-2026-10-29/start-20261029-080708-7389325a.json').read_text())
+        self.assertEqual(restored['status'], 'complete-host-and-three-guests-running-heartbeats-healthy')
     def test_entra_reads_omit_subscription_but_disk_commands_keep_it(self):
         h = runpy.run_path(str(ROOT / 'scripts/convert-smal-host-premium.py'), run_name='premium_cli_test')
         scope = h['az'].__globals__
