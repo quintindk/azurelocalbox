@@ -24,6 +24,28 @@ guessed. Its later vault role must wait for actual resource/identity inspection.
 The role-only template does not create cluster/deployment settings or alter vault
 public access. Full platform readiness remains false.
 
+## Approved scoped roles applied, 09:18 SAST
+
+The role-only deployment succeeded after a checked what-if containing exactly seven
+new bindings. All seven were independently read back with ServicePrincipal type:
+
+- Existing first-party Azure Local RP: Azure Connected Machine Resource Manager at
+  `rg-localbox-platform-weu-1` only.
+- Each actual Arc node identity: Azure Stack HCI Device Management Role and Azure
+  Stack HCI Connected InfraVMs at that RG only.
+- Each actual Arc node identity: Key Vault Secrets User at `kv-lbox-weu-4766ea` only.
+
+The existing deployer Secrets Officer grant was preserved, no subscription-wide
+grant was created, and vault public access remained **Disabled**. This verifies
+role assignment, not managed-identity secret retrieval or Azure Local RP acceptance.
+Receipts: `arc-platform-roles-receipt.json` and `arc-platform-roles-what-if.json`.
+
+Next incomplete gates are reviewed secure platform-credential publication, the
+derived cluster template/parameters, checked what-if, service **Validate**, then
+**Deploy** and final cluster/bridge/custom-location/storage verification. Service
+Validate is resource-creating, not a read-only check. No cluster deployment was
+invoked by this role-only step.
+
 ## Diagnosis
 
 The read-only private inspection on 29 October 2026 confirmed:

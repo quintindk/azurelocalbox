@@ -67,6 +67,21 @@ class ArcRoleTests(unittest.TestCase):
         self.assertNotIn('deploymentSettings', result.stdout)
         for principal in [self.h['RP'], *self.h['NODES'].values()]: self.assertIn(principal, result.stdout)
 
+    def test_live_role_receipt_matches_exact_seven_approved_bindings(self):
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/arc-platform-roles-receipt.json').read_text())
+        self.assertEqual(receipt['status'], 'complete-seven-approved-rg-and-vault-role-bindings')
+        self.assertEqual(receipt['deploymentState'], 'Succeeded')
+        self.assertEqual(receipt['newRoleBindingCount'], 7)
+        self.assertEqual(receipt['vaultPublicAccessAfter'], 'Disabled')
+        self.assertFalse(receipt['subscriptionWideGrantRequested'])
+        self.assertFalse(receipt['clusterDeploymentRequested'])
+        self.assertFalse(receipt['platformReadinessVerified'])
+        self.assertEqual({self.h['binding'](row) for row in receipt['assignmentsReadback']}, self.h['EXPECTED'])
+        self.assertTrue(all(row['principalType'] == 'ServicePrincipal' for row in receipt['assignmentsReadback']))
+        preview = json.loads((ROOT / 'docs/deployment-2026-10-29/arc-platform-roles-what-if.json').read_text())
+        unchanged = {row['resourceId'].lower() for row in preview['changes'] if row['changeType'] in ['NoChange', 'Ignore']}
+        self.h['validate_preview'](preview, unchanged, set())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,13 +1,15 @@
 # LocalBox bootstrap continuation, 28 October 2026
 
-## 29 October: NODE1 registered, NODE2 authorisation failure diagnosed
+## 29 October: both Arc nodes verified, scoped platform roles applied
 
-NODE1 bootstrap succeeded and its Arc agent is Connected. NODE2 failed resource
-creation with `AuthorizationFailed` for `Microsoft.HybridCompute/machines/write`
-at 16:33 SAST on 28 October, after connectivity validation succeeded. Owner access
-is active again at the time of inspection. A separate NODE2-only recovery console
-is installed, not invoked. See [diagnosis and guarded retry](../deployment-2026-10-29/arc-registration-recovery.md).
-Do not register NODE1 again or remove the original NODE2 failure marker.
+Both node bootstrap statuses are independently verified **Succeeded** and both Arc
+machines **Connected**, with expected West Europe location and separate inspected
+managed identities. NODE2's guarded fresh-auth recovery fixed yesterday's confirmed
+machine-write authorisation denial. Seven approved RG/vault role bindings were
+applied and read back at 09:18 SAST. The vault remains private. See
+[recovery and role evidence](../deployment-2026-10-29/arc-registration-recovery.md).
+Do not register either node again or delete historical failure markers. Cluster
+Validate/Deploy and full platform acceptance have **not** completed.
 
 ## Current progress: private ARM secret path verified
 
