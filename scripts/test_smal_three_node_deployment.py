@@ -11,6 +11,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_independent_acceptance_checks_exact_storage_and_keeps_real_encryption_gap_visible(self):
+        h = runpy.run_path(str(ROOT / 'scripts/assess-smal-three-node-acceptance.py'),run_name='independent_acceptance_test')
+        proof = json.loads((ROOT / h['WINDOWS']).read_text()); bindings = json.loads((ROOT / h['BINDINGS']).read_text())
+        result = h['verify_storage'](proof,bindings)
+        self.assertEqual(result['approvedPoolMemberCount'],12)
+        self.assertTrue(result['osDisksExcluded'])
+        self.assertEqual(len(h['boot_encryption_issues'](proof)),3)
+        bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['storagePools'][0]['members'][0]['uniqueId'] = 'foreign-or-os-disk'
+        with self.assertRaises(RuntimeError): h['verify_storage'](bad,bindings)
+        bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['quorumResourceName'] = 'Cloud Witness'
+        with self.assertRaises(RuntimeError): h['verify_storage'](bad,bindings)
+        cloud = json.loads((ROOT / h['CLOUD']).read_text()); h['verify_cloud'](cloud)
+        cloud['customLocationResources'][0]['hostResourceId'] = 'other-bridge'
+        with self.assertRaises(RuntimeError): h['verify_cloud'](cloud)
+
+    def test_bitlocker_gap_diagnostic_parses_without_enable_disable_or_key_export(self):
+        path = ROOT / 'scripts/inspect-smal-bitlocker-gap.ps1'; source = path.read_text()
+        for forbidden in ['Enable-ASBitLocker','Disable-ASBitLocker','Enable-BitLocker','Get-AsRecoveryKeyInfo','msFVE-RecoveryPassword','Set-LocalUser','Set-TPM']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn('Get-ASBitLocker -VolumeType BootVolume -Local',source)
+        self.assertIn('recoveryKeysExported = $false',source)
+        code = "$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile('" + str(path) + "',[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}"
+        subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',code],check=True,capture_output=True,timeout=30)
+
     def test_postdeploy_observer_uses_documented_renamed_rid500_without_fallback_or_reset(self):
         source = (ROOT / 'scripts/inspect-smal-three-node-final.ps1').read_text()
         self.assertIn("$vm.Name + '\\ASBuiltInAdmin'",source)
