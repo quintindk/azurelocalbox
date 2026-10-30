@@ -1,7 +1,8 @@
 """Start the existing SMAL host and its exact four nested guests. Safe to rerun.
 
-Requires existing Azure CLI sign-in/PIM access and the private VPN. Does not
-activate roles, change shutdown automation, or invoke registration/bootstrap.
+Requires existing Azure CLI sign-in/PIM access and the configured private VPN
+profile. Connects/reconnects that profile when needed, without editing it. Does
+not activate roles, change shutdown automation, or invoke registration/bootstrap.
 """
 import argparse
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ GUESTS = {'LB-DC01': 'f94c71f1-6854-48b9-a9f1-8238c99366d0',
           'LB-NODE02': '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3',
           'LB-NODE03': '5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9'}
 OUT = ROOT / 'docs/deployment-2026-10-29'
+VPN = 'entlz-san-cert'
 
 
 def az(args, timeout=90):
@@ -52,11 +54,45 @@ def verify_source():
 
 def verify_private_route():
     for address in ['10.204.0.4', '10.200.16.4']:
-        rows = json.loads(subprocess.check_output(['ip', '-j', 'route', 'get', address], text=True))
+        rows = json.loads(subprocess.check_output(['ip', '-j', 'route', 'get', address], text=True, timeout=10))
         if len(rows) != 1 or rows[0].get('dev') != 'tun0':
             raise RuntimeError('Private VPN route missing. Connect entlz-san-cert before starting LocalBox.')
     with socket.create_connection(('10.204.0.4', 53), timeout=10):
         pass
+
+
+def nmcli(args):
+    result = subprocess.run(['nmcli', '--wait', '90', *args], capture_output=True, text=True, timeout=100)
+    if result.returncode:
+        raise RuntimeError('Existing VPN operation failed. Check NetworkManager and the configured certificate in your terminal. No profile/authentication changes or automatic retry.')
+    return result.stdout.strip()
+
+
+def ensure_private_vpn(record, save):
+    record['vpn'] = {'profile': VPN, 'connectRequested': False, 'disconnectRequested': False,
+                     'profileOrCredentialsChanged': False, 'privatePathVerified': False}
+    save()
+    try:
+        verify_private_route()
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        # An Active label is insufficient. Resolve only the existing named VPN,
+        # then bind any connection operation to its exact returned UUID.
+        profile = nmcli(['-g', 'connection.uuid,connection.type', 'connection', 'show', 'id', VPN]).splitlines()
+        if len(profile) != 2 or profile[1] != 'vpn':
+            raise RuntimeError('Expected existing VPN profile is missing, ambiguous or not a VPN. No profile will be created.')
+        ident = str(uuid.UUID(profile[0]))
+        active = nmcli(['-g', 'UUID', 'connection', 'show', '--active']).splitlines()
+        record['vpn']['profileUuid'] = ident
+        record['status'] = 'restoring-existing-private-vpn'
+        if ident in active:
+            record['vpn']['disconnectRequested'] = True; save()
+            nmcli(['connection', 'down', 'uuid', ident])
+        record['vpn']['connectRequested'] = True; save()
+        nmcli(['connection', 'up', 'uuid', ident])
+        # Exactly one recovery attempt, then fail closed before any Azure start.
+        verify_private_route()
+    record['vpn']['privatePathVerified'] = True
+    save()
 
 
 def host_state():
@@ -134,7 +170,7 @@ def main(host_timeout=900):
             stream.write(json.dumps(record, indent=2) + '\n')
         try:
             record['sourceCommit'] = verify_source()
-            verify_private_route()
+            ensure_private_vpn(record, save)
             account = az(['account', 'show', '--subscription', SUB])
             if account.get('id') != SUB or account.get('tenantId') != TENANT or account.get('state') != 'Enabled':
                 raise RuntimeError('Approved subscription/tenant differs.')

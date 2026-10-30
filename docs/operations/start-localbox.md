@@ -10,13 +10,11 @@ python3 -B scripts/start-smal-localbox.py
 
 - Existing Azure CLI sign-in with the approved account. Activate existing PIM
   access manually if needed. No role activation or grant is performed by this command.
-- Connected `entlz-san-cert` VPN with actual `tun0` routes to the host and resolver.
-  An Active profile alone is not sufficient. If the routes are stale, reconnect:
-
-  ```bash
-  nmcli connection down id entlz-san-cert
-  nmcli connection up id entlz-san-cert
-  ```
+- Existing NetworkManager VPN profile `entlz-san-cert`, with its certificate and
+  authentication already configured. The command now connects it when needed.
+  A healthy private path is left alone. An Active profile without working private
+  routes/resolver reachability is reconnected once. Missing profiles or credentials
+  require manual attention, not automatic provisioning.
 
 - Existing pinned SSH key and successful private Bastion setup receipts on this
   operator machine. This is not a portable first-time provisioning tool.
@@ -24,8 +22,11 @@ python3 -B scripts/start-smal-localbox.py
 
 ## Behaviour
 
-1. Checks source, private routing, resolver reachability and signed-in identity
-   before requesting any start.
+1. Checks committed/pushed source, then actual `tun0` routes to the host/resolver
+   and TCP53 reachability to the private resolver. If needed, resolves the existing
+   named VPN to its UUID and connects it, or disconnects/reconnects that exact active
+   profile once. Rechecks the private path and signed-in identity before any Azure
+   start. No VPN profile, certificate, route configuration or credential is edited.
 2. Starts only `LocalBox-Client` in `rg-localbox-nodes-san-1`. Already Running is
    a no-op. A Starting host is observed without another start request. Stopping,
    deallocating and unexpected states are refused.
@@ -97,3 +98,31 @@ Azure Local guests. NODE3's Arc authentication remains a separate human step.
 The four-guest source passed a live no-op run at **12:22 SAST**, with all four
 heartbeats healthy and no VM start/reboot requests. Receipt:
 `../deployment-2026-10-29/start-20261029-102241-6d02b948.json`.
+
+## Automatic VPN connection, 30 October 2026
+
+The same daily command now manages connection of the **existing** `entlz-san-cert`
+profile. No extra command or scheduled job is required tomorrow morning.
+
+- Healthy tunnel routes and reachable resolver: leave the VPN alone.
+- Missing private path and inactive profile: connect the existing profile by UUID.
+- Active profile with broken routes or resolver path: reconnect it once by UUID.
+- Recheck actual host/resolver routes through tun0 and resolver TCP53 afterwards.
+- If connection or verification fails, stop before any Azure VM start.
+- Never create/edit a profile, certificate, credential or route configuration.
+- Never repeat an uncertain connection command automatically. Failure receipts
+  retain whether connect/disconnect was requested without raw authentication output.
+
+Morning startup initially stopped because NetworkManager reported the VPN Active
+without tun0 routes. After reconnecting the existing profile, the host was started
+and the DC plus NODE1–NODE3 changed from Off to Running with healthy heartbeats.
+Read-only checks subsequently verified all three Arc identities Connected, all
+three bootstrap statuses Succeeded, exact twelve approved RAW data disks, healthy
+outer volumes, private platform DNS/TLS paths, expected AD/OU/account expiry and
+the retained gateway echo rule. Initial post-boot Arc disconnection and NODE1's
+bootstrap endpoint read error cleared on follow-up without service changes.
+
+Evidence: `../deployment-2026-10-29/daily-health-verified-20261030.json` and its
+fingerprinted source receipts. The failed pre-start VPN receipt remains intact.
+The cluster still reports the previous ValidationFailed state. Health checks did
+not resubmit Validate/Deploy or retest deployment write permission.

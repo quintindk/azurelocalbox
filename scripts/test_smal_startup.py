@@ -97,6 +97,70 @@ class StartupTests(unittest.TestCase):
                 self.h['verify_private_route']()
             scope['socket'].create_connection.assert_not_called()
 
+    def test_healthy_private_path_does_not_touch_vpn(self):
+        record = {}; command = Mock()
+        with patch.dict(self.scope, verify_private_route=Mock(), nmcli=command):
+            self.h['ensure_private_vpn'](record,Mock())
+        command.assert_not_called()
+        self.assertTrue(record['vpn']['privatePathVerified'])
+        self.assertFalse(record['vpn']['connectRequested'])
+
+    def test_disconnected_existing_vpn_is_connected_once_by_uuid(self):
+        ident = '11111111-2222-4333-8444-555555555555'
+        command = Mock(side_effect=[ident + '\nvpn','', 'connected'])
+        check = Mock(side_effect=[RuntimeError('No route'),None]); record = {}
+        with patch.dict(self.scope, verify_private_route=check, nmcli=command):
+            self.h['ensure_private_vpn'](record,Mock())
+        self.assertEqual(command.call_args_list[-1].args[0],['connection','up','uuid',ident])
+        self.assertEqual(command.call_count,3)
+        self.assertFalse(record['vpn']['disconnectRequested'])
+        self.assertTrue(record['vpn']['privatePathVerified'])
+
+    def test_stale_active_vpn_gets_one_down_up_and_real_path_recheck(self):
+        ident = '11111111-2222-4333-8444-555555555555'
+        command = Mock(side_effect=[ident + '\nvpn',ident,'disconnected','connected'])
+        check = Mock(side_effect=[TimeoutError('Resolver unreachable'),None]); record = {}
+        with patch.dict(self.scope, verify_private_route=check, nmcli=command):
+            self.h['ensure_private_vpn'](record,Mock())
+        self.assertEqual([call.args[0] for call in command.call_args_list[-2:]],
+                         [['connection','down','uuid',ident],['connection','up','uuid',ident]])
+        self.assertEqual(check.call_count,2)
+        self.assertTrue(record['vpn']['disconnectRequested'])
+        self.assertFalse(record['vpn']['profileOrCredentialsChanged'])
+
+    def test_vpn_recovery_failure_is_not_repeated_or_marked_healthy(self):
+        ident = '11111111-2222-4333-8444-555555555555'
+        command = Mock(side_effect=[ident + '\nvpn','', 'connected']); record = {}
+        with patch.dict(self.scope, verify_private_route=Mock(side_effect=RuntimeError('still missing')),nmcli=command):
+            with self.assertRaises(RuntimeError): self.h['ensure_private_vpn'](record,Mock())
+        self.assertEqual(command.call_count,3)
+        self.assertFalse(record['vpn']['privatePathVerified'])
+
+    def test_vpn_missing_wrong_type_or_ambiguous_never_creates_a_profile(self):
+        for profile in ['', '11111111-2222-4333-8444-555555555555\nethernet','one\nvpn\ntwo\nvpn']:
+            command = Mock(return_value=profile)
+            with patch.dict(self.scope, verify_private_route=Mock(side_effect=RuntimeError('No route')),nmcli=command):
+                with self.assertRaises(RuntimeError): self.h['ensure_private_vpn']({},Mock())
+            self.assertEqual(command.call_count,1)
+
+    def test_nmcli_failure_suppresses_raw_auth_diagnostics(self):
+        runner = Mock(return_value=Mock(returncode=1,stdout='',stderr='SYNTHETIC-CREDENTIAL-DIAGNOSTIC'))
+        with patch.object(self.scope['subprocess'],'run',runner):
+            with self.assertRaises(RuntimeError) as error: self.h['nmcli'](['connection','up','uuid','synthetic'])
+        self.assertNotIn('SYNTHETIC-CREDENTIAL-DIAGNOSTIC',str(error.exception))
+        self.assertNotIn('--ask',runner.call_args.args[0])
+
+    def test_daily_health_evidence_verifies_all_four_guests_without_claiming_deployment(self):
+        record = json.loads((ROOT / 'docs/deployment-2026-10-29/daily-health-verified-20261030.json').read_text())
+        self.assertEqual(record['status'],'startup-and-read-only-health-checks-passed')
+        self.assertTrue(record['fourGuestHeartbeatsHealthy'])
+        self.assertTrue(record['threeArcIdentitiesConnected'])
+        self.assertTrue(record['threeBootstrapStatusesSucceeded'])
+        self.assertEqual(record['exactApprovedRawDataDisksVerified'],12)
+        self.assertFalse(record['validateOrDeploySubmitted'])
+        self.assertFalse(record['platformReadinessVerified'])
+        self.assertFalse(record['deploymentWritePermissionRetested'])
+
     def test_exact_guest_set_and_heartbeat_required(self):
         good = {'status': 'complete', 'result': {'registrationInvoked': False, 'registrationMarkersChanged': False,
                 'guests': [{'name': name, 'id': vm_id, 'after': 'Running', 'heartbeatReady': True}
