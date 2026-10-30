@@ -126,3 +126,11 @@ Evidence: `../deployment-2026-10-29/daily-health-verified-20261030.json` and its
 fingerprinted source receipts. The failed pre-start VPN receipt remains intact.
 The cluster still reports the previous ValidationFailed state. Health checks did
 not resubmit Validate/Deploy or retest deployment write permission.
+
+Verification: **239 regression tests passed**, including disconnected-profile,
+stale-active-profile, missing-profile, bounded failure and healthy-path VPN cases.
+The updated source also passed a live no-op run at **07:47 SAST**: private path
+verified, no VPN reconnect, no host/guest start requests, all four heartbeats healthy.
+The automatic connect/reconnect branches were tested offline, not by deliberately
+interrupting the restored live tunnel. Live receipt:
+`../deployment-2026-10-29/start-20261030-054709-2b4f739f.json`.
