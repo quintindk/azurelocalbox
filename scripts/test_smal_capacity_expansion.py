@@ -5,6 +5,7 @@ from pathlib import Path
 import runpy
 import subprocess
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -83,6 +84,25 @@ class CapacityExpansionTests(unittest.TestCase):
         self.assertIn('$files.Count -ne 1',source)
         self.assertIn('$vhd.Attached',source)
         self.assertIn('Get-FileHash $first',source)
+
+    def test_string_disk_identifier_is_explicitly_parsed_before_byte_conversion(self):
+        value = '2346EBF2-6D1B-48B4-85DB-090E25B7E955'
+        ident = uuid.UUID(value); expected = '60022480' + (ident.bytes_le[:6] + ident.bytes[-6:]).hex().upper()
+        command = "$id='" + value + "';$bytes=([guid]::Parse([string]$id)).ToByteArray();'60022480'+[BitConverter]::ToString([byte[]]@($bytes[0..5]+$bytes[10..15])).Replace('-','')"
+        result = subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',command],check=True,capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.stdout.strip(),expected)
+        self.assertIn('([guid]::Parse([string]$vhd.DiskIdentifier)).ToByteArray()', (ROOT / 'scripts/add-smal-capacity-vhds.ps1').read_text())
+
+    def test_first_file_resume_rejects_attachments_or_changed_approval(self):
+        failed = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-capacity-add-vhds-20261030.json').read_text())
+        admission = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-capacity-first-vhd-interruption-20261030.json').read_text())
+        self.h['verify_first_file_resume'](failed,admission,self.plan)
+        bad = copy.deepcopy(admission); bad['result']['firstVhd']['attached'] = True
+        with self.assertRaises(RuntimeError): self.h['verify_first_file_resume'](failed,bad,self.plan)
+        bad = copy.deepcopy(admission); bad['result']['planSha256'] = 'changed'
+        with self.assertRaises(RuntimeError): self.h['verify_first_file_resume'](failed,bad,self.plan)
+        bad = copy.deepcopy(failed); bad['result']['disks'] = [{'attached':True}]
+        with self.assertRaises(RuntimeError): self.h['verify_first_file_resume'](bad,admission,self.plan)
 
     def growth_fixture(self):
         proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-final-cluster-storage-postdeploy-identity-20261030.json').read_text())

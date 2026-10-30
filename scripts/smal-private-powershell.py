@@ -160,7 +160,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     if relative in capacity_scripts:
         guard = runpy.run_path(str(ROOT / 'scripts/smal-capacity-expansion.py'),run_name='capacity_transport_guard')
         guard['source_guard']()
-        if not isinstance(capacity_context,dict) or set(capacity_context) != {'planBase64','approvalBase64','azureDiskUniqueId'}:
+        if not isinstance(capacity_context,dict) or set(capacity_context) not in [{'planBase64','approvalBase64','azureDiskUniqueId'},{'planBase64','approvalBase64','azureDiskUniqueId','resumeBindingFix'}]:
             raise RuntimeError('Exact public capacity context required')
         if relative != 'scripts/prepare-smal-capacity-expansion.ps1': uuid.UUID(capacity_context['azureDiskUniqueId'])
         for key,path in [('planBase64',guard['PLAN_PATH']),('approvalBase64',guard['APPROVAL_PATH'])]:
@@ -168,6 +168,15 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
         public = json.dumps(capacity_context,sort_keys=True,separators=(',',':')).encode()
         prelude = (ROOT / 'scripts/smal-capacity-prelude.ps1').read_text().replace('__CAPACITY_CONTEXT_BASE64__',base64.b64encode(public).decode()).replace('__CAPACITY_CONTEXT_SHA256__',hashlib.sha256(public).hexdigest().upper()).replace('__CAPACITY_SOURCE_COMMIT__',head)
         source = source.decode().replace('__CAPACITY_PRELUDE__',prelude).encode()
+        if 'resumeBindingFix' in capacity_context:
+            if relative != 'scripts/add-smal-capacity-vhds.ps1' or capacity_context['resumeBindingFix'] is not True: raise RuntimeError('First-file correction accepted only by the approved VHD stage')
+            failed_name = 'docs/deployment-2026-10-27/private-ssh-capacity-add-vhds-20261030.json'
+            admission_name = 'docs/deployment-2026-10-27/private-ssh-capacity-first-vhd-interruption-20261030.json'
+            guard['D']['A']['source_guard']([failed_name,admission_name])
+            failed = json.loads((ROOT / failed_name).read_text()); admission = json.loads((ROOT / admission_name).read_text())
+            guard['verify_first_file_resume'](failed,admission,guard['load_plan']())
+            proof = json.dumps(admission['result'],sort_keys=True,separators=(',',':')).encode()
+            source = source.decode().replace('__CAPACITY_RESUME_ADMISSION_BASE64__',base64.b64encode(proof).decode()).encode()
     elif capacity_context is not None:
         raise RuntimeError('Capacity context accepted only by the three approved expansion scripts')
     three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/inspect-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1', 'scripts/install-smal-node03-arc-console.ps1'}

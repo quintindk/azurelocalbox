@@ -106,6 +106,20 @@ size/geometry, the unchanged original five attachments per node, and the origina
 healthy 12-device S2D pool. Its returned GUID and file hash must be retained. No
 file or failure marker may be deleted or blindly recreated.
 
+The read-only inspection verified exactly one **4 MiB**, unattached, dynamic
+170 GiB VHD, GUID **2346EBF2-6D1B-48B4-85DB-090E25B7E955**, with matching sector/block
+geometry. All fifteen original VHD attachments/identities and the healthy 12-device
+S2D pool are unchanged. The new file's SHA256 is retained in the inspection receipt.
+
+The corrected encoder explicitly parses the returned identifier as a Guid before
+byte conversion. `add-vhds --resume-first-vhd-binding` permits only this one admitted
+file, requiring the committed failure/admission evidence and a live matching file
+hash/GUID. It reuses that file without recreation, creates the remaining eleven
+files, and proceeds under a **separate** marker/state/receipt. The old failure and
+marker stay intact. Other existing files or any prior guest attachment block this
+specific recovery. Unit tests execute the string-Guid conversion with PowerShell
+and compare it with the independently derived guest unique ID.
+
 ## References
 
 - [S2D in a guest cluster: unsupported host-level size changes and adding capacity](https://learn.microsoft.com/en-us/windows-server/storage/storage-spaces/storage-spaces-direct-in-vm).

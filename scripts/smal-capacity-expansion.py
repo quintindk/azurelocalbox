@@ -43,10 +43,12 @@ def source_guard():
     head = D['A']['source_guard'](paths); load_plan(); return head
 
 
-def public_context(disk_unique_id=None):
+def public_context(disk_unique_id=None,resume_binding_fix=False):
     if disk_unique_id is not None: uuid.UUID(disk_unique_id)
-    return {'planBase64':base64.b64encode((ROOT / PLAN_PATH).read_bytes()).decode(),
-            'approvalBase64':base64.b64encode((ROOT / APPROVAL_PATH).read_bytes()).decode(),'azureDiskUniqueId':disk_unique_id}
+    result = {'planBase64':base64.b64encode((ROOT / PLAN_PATH).read_bytes()).decode(),
+              'approvalBase64':base64.b64encode((ROOT / APPROVAL_PATH).read_bytes()).decode(),'azureDiskUniqueId':disk_unique_id}
+    if resume_binding_fix: result['resumeBindingFix'] = True
+    return result
 
 
 def vm_projection():
@@ -111,13 +113,16 @@ def validate_preview(data,owned,plan):
 
 
 def previous(stage):
-    row = json.loads((OUT / ('capacity-expansion-' + stage + '-receipt.json')).read_text())
+    path = OUT / ('capacity-expansion-' + stage + '-receipt.json')
+    reconciled = OUT / 'capacity-expansion-add-vhds-after-id-binding-reconciliation-receipt.json'
+    if stage == 'add-vhds' and reconciled.exists(): path = reconciled
+    row = json.loads(path.read_text())
     if row.get('status') != 'complete': raise RuntimeError('Earlier capacity stage incomplete: ' + stage)
     return row
 
 
 def run_private(stage,context):
-    name = 'capacity-' + stage + '-20261030'
+    name = 'capacity-' + stage + '-after-id-binding-20261030' if context.get('resumeBindingFix') else 'capacity-' + stage + '-20261030'
     with contextlib.redirect_stdout(io.StringIO()): code = D['T']['main'](SCRIPTS[stage],name,capacity_context=context)
     path = D['T']['OUT'] / ('private-ssh-' + name + '.json'); proof = json.loads(path.read_text())
     expected = {'prepare':'complete-pre-attachment-baseline','format':'complete-new-only-4tib-x-volume','add-vhds':'complete-twelve-new-vhds-attached-await-pool-observation'}[stage]
@@ -154,11 +159,36 @@ def verify_growth(plan,baseline,added,proof):
             'optimizationFullyCompletedProven':False,'platformReadinessVerified':False}
 
 
-def main(stage):
+def verify_first_file_resume(failed,admission,plan):
+    first = plan['nodes']['LB-NODE01']['newDisks'][0]['path']
+    result = failed.get('result',{}); proof = admission.get('result',{}); vhd = proof.get('firstVhd',{})
+    plan_sha = json.loads((ROOT / APPROVAL_PATH).read_text())['planSha256']
+    if (failed.get('status') != 'complete' or result.get('status') != 'failed-or-uncertain-inspect-do-not-repeat'
+            or result.get('errorType') != 'RuntimeException' or result.get('errorLine') != 106 or result.get('disks') != [] or result.get('pendingPath') != first or result.get('planSha256') != plan_sha):
+        raise RuntimeError('Not the exact retained first-file GUID-encoding interruption')
+    if (admission.get('status') != 'complete' or proof.get('status') != 'verified-one-owned-unattached-first-vhd-and-unchanged-cluster'
+            or proof.get('mutationPerformed') is not False or proof.get('originalVhdCount') != 15 or proof.get('originalPoolDeviceCount') != 12
+            or vhd.get('path') != first or vhd.get('sizeBytes') != 170*1024**3 or vhd.get('attached') is not False
+            or vhd.get('fileSize',2**64) > 32*1024**2 or len(vhd.get('sha256','')) != 64
+            or proof.get('planSha256') != plan_sha or proof.get('azureDiskUniqueId') != result.get('azureDiskUniqueId')):
+        raise RuntimeError('Exact read-only unused-file admission proof missing')
+    uuid.UUID(vhd['vhdId'])
+
+
+def main(stage,resume_binding_fix=False):
     head = source_guard(); plan = load_plan(); path = OUT / ('capacity-expansion-' + stage + '-receipt.json')
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'stage':stage,'status':'pending',
               'planSha256':hashlib.sha256((ROOT / PLAN_PATH).read_bytes()).hexdigest(),'existingDiskResizeRequested':False,
               'osOrCsvResizeRequested':False,'policyOrAutomationChanged':False,'platformReadinessVerified':False}
+    if resume_binding_fix:
+        if stage != 'add-vhds': raise RuntimeError('The exact first-file correction applies only to add-vhds')
+        failed_name = 'docs/deployment-2026-10-27/private-ssh-capacity-add-vhds-20261030.json'
+        admission_name = 'docs/deployment-2026-10-27/private-ssh-capacity-first-vhd-interruption-20261030.json'
+        D['A']['source_guard']([failed_name,admission_name,'docs/deployment-2026-10-30/capacity-expansion-add-vhds-receipt.json'])
+        verify_first_file_resume(json.loads((ROOT / failed_name).read_text()),json.loads((ROOT / admission_name).read_text()),plan)
+        path = OUT / 'capacity-expansion-add-vhds-after-id-binding-reconciliation-receipt.json'
+        record['originalFailureRetained'] = True
+        record['readOnlyAdmissionSha256'] = hashlib.sha256((ROOT / admission_name).read_bytes()).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
     try:
@@ -196,7 +226,7 @@ def main(stage):
         elif stage in ['format','add-vhds']:
             created = previous('create')['newDisk']; live = D['az'](['disk','show','--subscription',D['SUB'],'--ids',plan['newDisk']['id']]); verify_new_disk(live,plan,attached=True)
             if live['uniqueId'] != created['uniqueId']: raise RuntimeError('New backing disk immutable identity changed')
-            record['privateReceipt'],record['result'] = run_private(stage,public_context(created['uniqueId']))
+            record['privateReceipt'],record['result'] = run_private(stage,public_context(created['uniqueId'],resume_binding_fix=resume_binding_fix))
         else:
             created = previous('create')['newDisk']; disk = D['az'](['disk','show','--subscription',D['SUB'],'--ids',plan['newDisk']['id']]); verify_new_disk(disk,plan,attached=True)
             if disk['uniqueId'] != created['uniqueId']: raise RuntimeError('Final new disk immutable identity differs')
@@ -216,5 +246,7 @@ def main(stage):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('stage',choices=STAGES); args = parser.parse_args()
-    raise SystemExit(main(args.stage))
+    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('stage',choices=STAGES)
+    parser.add_argument('--resume-first-vhd-binding',action='store_true'); args = parser.parse_args()
+    if args.resume_first_vhd_binding and args.stage != 'add-vhds': parser.error('first-file binding correction applies only to add-vhds')
+    raise SystemExit(main(args.stage,args.resume_first_vhd_binding))
