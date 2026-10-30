@@ -285,6 +285,53 @@ resource, never creation of another settings resource or reapplication of the
 cluster, roles, secrets, storage or shared networking. Full platform readiness
 remains false until service Deploy and independent post-deployment acceptance pass.
 
+## First Deploy stopped before submission: NoChange preview representation
+
+At **10:11 SAST**, the first Deploy invocation passed private inputs but refused
+the what-if shape before submission. The original create-only receipt is retained.
+No Deploy ARM resource exists and current service validation remains successful.
+
+Two independently inspected what-if requests, including an explicit public CLI
+`deploymentMode=Deploy` parameter, returned **NoChange** for the same existing
+settings. Both before/after bodies show its current Validate mode. All other
+resources are unchanged Ignore entries. This is a reproducible preview result,
+not evidence that the CLI requested Validate or that Deploy was submitted.
+
+Microsoft defines NoChange as an existing resource that **will be redeployed**.
+The Azure Local ARM guide explicitly instructs redeployment with deploymentMode
+changed from Validate to Deploy after validation succeeds. These facts support
+accepting the exact existing-resource NoChange case without claiming that what-if
+proves execution of the deployment action.
+
+The revised guard accepts only one existing settings resource as NoChange/Modify,
+with the exact three validated Arc IDs and unchanged live configuration. GET and
+what-if differ only in these observed default representations:
+
+- GET includes empty witnessType, witnessPath, cloudAccountName and azureServiceEndpoint.
+- GET includes hardwareClass **Medium**, omitted by the preview.
+- GET includes empty hash/url for the **12.2610.1004.41** SolutionVersion payload.
+
+Comparison normalises only those exact defaults. Nonempty witness fields, another
+hardware class/version, changed topology/network/security/storage settings or any
+unlisted resource effect remain blocked. Neither the actual template nor the live
+configuration is rewritten by normalisation. The original settings-template hash
+is unchanged. The strict live preview guard passed at **10:18 SAST**.
+
+The original unsubmitted refusal and inspected previews must be committed before
+`--resume-unsubmitted-deploy` may reuse the **same Deploy ARM identity**. It repeats
+fresh domain/storage/private-path checks, verifies no existing Deploy record, and
+requires positive service validation and cluster ValidationSuccess immediately
+before one explicit Deploy submission. The original refusal is never overwritten.
+
+Evidence: `three-node-cluster-deploy-receipt.json`, `three-node-deploy-preview-reconciliation-20261030.json`,
+`three-node-deploy-explicit-mode-preview-20261030.json`, `three-node-deploy-preview-configuration-differences-20261030.json`
+and `three-node-deploy-strict-preview-proof-20261030.json`.
+
+References:
+
+- [ARM what-if change types](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deploy-what-if#change-types).
+- [Azure Local ARM deployment workflow](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610).
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

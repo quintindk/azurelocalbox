@@ -11,6 +11,53 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_deploy_configuration_only_normalises_exact_observed_empty_defaults(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='deploy_defaults_test')
+        live = {'scaleUnits':[{'deploymentData':{'cluster':{'name':'smal-localbox01','witnessType':'','witnessPath':'','cloudAccountName':'','azureServiceEndpoint':'','hardwareClass':'Medium'},
+                'assemblyInfo':{'payload':[{'identifier':'SolutionVersion','fileName':'12.2610.1004.41','hash':'','url':''}]}}}]}
+        preview = copy.deepcopy(live)
+        cluster = preview['scaleUnits'][0]['deploymentData']['cluster']
+        for key in ['witnessType','witnessPath','cloudAccountName','azureServiceEndpoint','hardwareClass']: del cluster[key]
+        item = preview['scaleUnits'][0]['deploymentData']['assemblyInfo']['payload'][0]; del item['hash']; del item['url']
+        self.assertEqual(h['canonical_deploy_configuration'](live),h['canonical_deploy_configuration'](preview))
+        for key,value in [('witnessType','Cloud'),('hardwareClass','Large'),('cloudAccountName','unapproved')]:
+            bad = copy.deepcopy(live); bad['scaleUnits'][0]['deploymentData']['cluster'][key] = value
+            with self.assertRaises(RuntimeError): h['canonical_deploy_configuration'](bad)
+        bad = copy.deepcopy(live); bad['scaleUnits'][0]['deploymentData']['assemblyInfo']['payload'][0]['url'] = 'unexpected'
+        with self.assertRaises(RuntimeError): h['canonical_deploy_configuration'](bad)
+
+    def test_deploy_preview_allows_exact_existing_nochange_but_not_config_or_resource_changes(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='nochange_deploy_guard_test')
+        ids = [h['SCOPE'] + '/providers/Microsoft.HybridCompute/machines/' + name for name in h['P']['NODES']]
+        props = {'deploymentMode':'Validate','arcNodeResourceIds':ids,'deploymentConfiguration':{'synthetic':'unchanged'}}
+        live = {'id':h['SETTINGS'],'properties':{**props,'provisioningState':'Succeeded'}}
+        data = {'status':'Succeeded','changes':[{'resourceId':h['SETTINGS'],'changeType':'NoChange','before':{'properties':copy.deepcopy(props)},'after':{'properties':copy.deepcopy(props)},'delta':[]}]}
+        self.assertEqual(h['check_deploy_preview'](data,set(),live)[0]['changeType'],'NoChange')
+        for kind in ['Create','Delete','Ignore']:
+            bad = copy.deepcopy(data); bad['changes'][0]['changeType'] = kind
+            with self.assertRaises(RuntimeError): h['check_deploy_preview'](bad,set(),live)
+        for key,value in [('deploymentConfiguration',{'changed':True}),('arcNodeResourceIds',ids[:2]),('deploymentMode','Deploy')]:
+            bad = copy.deepcopy(data); bad['changes'][0]['after']['properties'][key] = value
+            with self.assertRaises(RuntimeError): h['check_deploy_preview'](bad,set(),live)
+        modified = copy.deepcopy(data); modified['changes'][0]['changeType'] = 'Modify'; modified['changes'][0]['after']['properties']['deploymentMode'] = 'Deploy'
+        h['check_deploy_preview'](modified,set(),live)
+        modified['changes'][0]['after']['properties']['unlisted'] = True
+        with self.assertRaises(RuntimeError): h['check_deploy_preview'](modified,set(),live)
+        bad = copy.deepcopy(data); bad['changes'].append({'resourceId':h['VAULT'],'changeType':'Modify'})
+        with self.assertRaises(RuntimeError): h['check_deploy_preview'](bad,{h['VAULT'].lower()},live)
+
+    def test_unsubmitted_deploy_reconciliation_cannot_replay_a_submitted_operation(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='unsubmitted_deploy_guard_test')
+        out = ROOT / 'docs/deployment-2026-10-29'
+        prior = json.loads((out / 'three-node-cluster-deploy-receipt.json').read_text())
+        diagnostic = json.loads((out / 'three-node-deploy-preview-reconciliation-20261030.json').read_text())
+        h['verify_unsubmitted_deploy'](prior,diagnostic)
+        for field,value in [('previewChanges',[]),('deploymentId','submitted'),('deploymentState','Running')]:
+            bad = copy.deepcopy(prior); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_unsubmitted_deploy'](bad,diagnostic)
+        bad = copy.deepcopy(diagnostic); bad['deployArmRecords'] = ['exists']
+        with self.assertRaises(RuntimeError): h['verify_unsubmitted_deploy'](prior,bad)
+
     def test_reconciled_validation_success_and_current_domain_storage_proof_are_positive(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='positive_validation_receipt_test')
         receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-validation-success-reconciliation-20261030.json').read_text())
@@ -227,7 +274,7 @@ class ThreeNodeDeploymentTests(unittest.TestCase):
         self.assertEqual(h['NAME'],'smal-localbox01')
         self.assertLessEqual(len(h['NAME']),15)
         self.assertEqual(len(h['effects']('prerequisites')),4)
-        for stage in ['secrets','prerequisites','validate','deploy']:
+        for stage in ['secrets','prerequisites','validate']:
             rows = [{'resourceId':rid,'changeType':'Modify' if stage == 'deploy' else 'Create','after':{'properties':{'value':'SYNTHETIC-SECRET'}}} for rid in h['effects'](stage)]
             good = {'status':'Succeeded','changes':rows}
             safe = h['check_preview'](stage,good,set())

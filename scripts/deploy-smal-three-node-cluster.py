@@ -92,6 +92,8 @@ def previous(stage):
     if stage == 'validate' and gateway_retry.exists() and gateway_reconciled.exists(): path = gateway_reconciled
     validation_success = OUT / 'three-node-cluster-validation-success-reconciliation-20261030.json'
     if stage == 'validate' and gateway_reconciled.exists() and validation_success.exists(): path = validation_success
+    deploy_reconciled = OUT / 'three-node-cluster-deploy-after-preview-reconciliation-receipt.json'
+    if stage == 'deploy' and deploy_reconciled.exists(): path = deploy_reconciled
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result
@@ -104,7 +106,60 @@ def effects(stage):
     return set()
 
 
-def check_preview(stage,data,owned,principal=None):
+def canonical_deploy_configuration(configuration):
+    value = json.loads(json.dumps(configuration))
+    # Exact observed RP/what-if representation differences only. GET includes
+    # these defaults while what-if omits them. Never strip non-default values.
+    for unit in value.get('scaleUnits',[]):
+        data = unit.get('deploymentData',{}); cluster = data.get('cluster',{})
+        for key,expected in [('azureServiceEndpoint',''),('cloudAccountName',''),('witnessPath',''),('witnessType',''),('hardwareClass','Medium')]:
+            if key in cluster:
+                if cluster[key] != expected: raise RuntimeError('Unexpected live/preview No Witness cluster default')
+                del cluster[key]
+        for item in (data.get('assemblyInfo') or {}).get('payload',[]):
+            if item.get('identifier') == 'SolutionVersion':
+                if item.get('fileName') != '12.2610.1004.41': raise RuntimeError('Approved solution version drifted')
+                for key in ['hash','url']:
+                    if key in item:
+                        if item[key] != '': raise RuntimeError('Unexpected solution-version payload metadata')
+                        del item[key]
+    return value
+
+
+def check_deploy_preview(data,owned,live_settings):
+    if data.get('status') != 'Succeeded' or not isinstance(live_settings,dict) or live_settings.get('id','').lower() != SETTINGS.lower():
+        raise RuntimeError('Exact successful preview and live existing settings required before Deploy')
+    live = live_settings.get('properties',{})
+    expected_nodes = {(SCOPE + '/providers/Microsoft.HybridCompute/machines/' + name).lower() for name in P['NODES']}
+    if live.get('deploymentMode') != 'Validate' or live.get('provisioningState') != 'Succeeded' or not live.get('deploymentConfiguration'):
+        raise RuntimeError('Live settings are not the successful validated configuration')
+    if {rid.lower() for rid in live.get('arcNodeResourceIds',[])} != expected_nodes: raise RuntimeError('Live validated node binding differs')
+    seen = []
+    for row in data.get('changes',[]):
+        rid = row.get('resourceId','').lower(); kind = row.get('changeType')
+        if rid != SETTINGS.lower():
+            if kind not in ['Ignore','NoChange'] or rid not in owned or row.get('before') != row.get('after'):
+                raise RuntimeError('Unlisted resource effect in Deploy preview')
+            continue
+        if kind not in ['NoChange','Modify']: raise RuntimeError('Deploy may only redeploy existing settings, never create/delete them')
+        before = (row.get('before') or {}).get('properties',{}); after = (row.get('after') or {}).get('properties',{})
+        if before.get('deploymentMode') != 'Validate' or after.get('deploymentMode') != ('Validate' if kind == 'NoChange' else 'Deploy'):
+            raise RuntimeError('Unexpected mode transition in Deploy preview')
+        for props in [before,after]:
+            if ({rid.lower() for rid in props.get('arcNodeResourceIds',[])} != expected_nodes
+                    or canonical_deploy_configuration(props.get('deploymentConfiguration') or {}) != canonical_deploy_configuration(live['deploymentConfiguration'])):
+                raise RuntimeError('Deploy preview changes validated nodes/configuration')
+        if kind == 'NoChange' and (row.get('before') != row.get('after') or row.get('delta')):
+            raise RuntimeError('NoChange Deploy preview contains a property difference')
+        for key in (set(before) | set(after)) - {'deploymentMode','arcNodeResourceIds','deploymentConfiguration','provisioningState','reportedProperties'}:
+            if before.get(key) != after.get(key): raise RuntimeError('Unlisted settings property changed in Deploy preview')
+        seen.append({'id':row['resourceId'],'changeType':kind,'beforeMode':before['deploymentMode'],'afterMode':after['deploymentMode']})
+    if len(seen) != 1: raise RuntimeError('Exactly one existing settings redeployment required')
+    return seen
+
+
+def check_preview(stage,data,owned,principal=None,live_settings=None):
+    if stage == 'deploy': return check_deploy_preview(data,owned,live_settings)
     if data.get('status') != 'Succeeded': raise RuntimeError('No Witness what-if failed')
     seen = set(); result = []
     for row in data.get('changes',[]):
@@ -178,7 +233,19 @@ def verify_unsubmitted_secret_resume(prior,sealed_receipt_exists,template_hash):
         raise RuntimeError('No exact before-sealing, unsubmitted secret attempt is eligible for reconciliation')
 
 
-def main(stage,wait_seconds=1200,resume_unsubmitted=False):
+def verify_unsubmitted_deploy(prior,diagnostic):
+    if (prior.get('stage') != 'deploy' or prior.get('deploymentName') != 'localbox-three-node-deploy-20261029'
+            or prior.get('status') != 'failed-inspect-before-resume' or prior.get('error') != 'Unlisted resource effect in No Witness stage: deploy'
+            or not prior.get('privateInputsReceipt') or any(key in prior for key in ['previewChanges','deploymentId','deploymentState'])):
+        raise RuntimeError('Not the exact retained pre-submission Deploy preview refusal')
+    target = [row for row in diagnostic.get('changes',[]) if row.get('id','').lower() == SETTINGS.lower()]
+    if (diagnostic.get('status') != 'read-only-deploy-preview-reconciliation' or diagnostic.get('deployArmRecords') != []
+            or diagnostic.get('validateOrDeploySubmitted') is not False or len(target) != 1
+            or target[0].get('changeType') != 'NoChange' or target[0].get('beforeMode') != 'Validate' or target[0].get('afterMode') != 'Validate'):
+        raise RuntimeError('Exact NoChange/unsubmitted Deploy reconciliation proof missing')
+
+
+def main(stage,wait_seconds=1200,resume_unsubmitted=False,resume_deploy=False):
     head = source_guard(); action = 'localbox-three-node-' + stage + '-20261029'; path = OUT / ('three-node-cluster-' + stage + '-receipt.json')
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'stage':stage,'deploymentName':action,'status':'pending',
               'witnessKeyReadOrUpload':False,'publicAccessChangeRequested':False,'sharedKeyChangeRequested':False,'subscriptionWideGrantRequested':False,'platformReadinessVerified':False}
@@ -189,6 +256,18 @@ def main(stage,wait_seconds=1200,resume_unsubmitted=False):
         prior = json.loads(prior_bytes)
         verify_unsubmitted_secret_resume(prior,(T['OUT'] / 'private-ssh-sealed-platform-credentials-20261029.json').exists(),hashlib.sha256((ROOT / TEMPLATES['secrets']).read_bytes()).hexdigest())
         path = OUT / 'three-node-cluster-secrets-after-private-transport-reconciliation.json'
+        record['originalPreSubmitRefusalRetained'] = True; record['originalReceiptSha256'] = hashlib.sha256(prior_bytes).hexdigest()
+    if resume_deploy:
+        if stage != 'deploy' or resume_unsubmitted: raise RuntimeError('Only the exact unsubmitted Deploy may use preview reconciliation')
+        original_name = 'docs/deployment-2026-10-29/three-node-cluster-deploy-receipt.json'
+        diagnostic_name = 'docs/deployment-2026-10-29/three-node-deploy-preview-reconciliation-20261030.json'
+        A['source_guard']([original_name,diagnostic_name,'docs/deployment-2026-10-29/three-node-deploy-explicit-mode-preview-20261030.json'])
+        prior_bytes = (ROOT / original_name).read_bytes(); prior = json.loads(prior_bytes)
+        verify_unsubmitted_deploy(prior,json.loads((ROOT / diagnostic_name).read_text()))
+        # The failed source used exactly today's unchanged approved template.
+        pinned = subprocess.check_output(['git','show',prior['sourceCommit'] + ':' + TEMPLATES['deploy']],cwd=ROOT)
+        if pinned != (ROOT / TEMPLATES['deploy']).read_bytes(): raise RuntimeError('Settings template changed since the refused Deploy preview')
+        path = OUT / 'three-node-cluster-deploy-after-preview-reconciliation-receipt.json'
         record['originalPreSubmitRefusalRetained'] = True; record['originalReceiptSha256'] = hashlib.sha256(prior_bytes).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
@@ -219,7 +298,7 @@ def main(stage,wait_seconds=1200,resume_unsubmitted=False):
                 validation = previous('validate')
                 current = service_result('validate')
                 if not service_passed(current) or validation['templateSha256'] != hashlib.sha256((ROOT / TEMPLATES['deploy']).read_bytes()).hexdigest(): raise RuntimeError('Positive current validation/configuration match required before Deploy')
-            record['privateInputsReceipt'] = inspect_inputs(stage)
+            record['privateInputsReceipt'] = inspect_inputs('deploy-pre-submit-resume' if resume_deploy else stage,validated_ad_members=(stage == 'deploy'))
             metadata = az(['keyvault','secret','list','--subscription',SUB,'--vault-name','kv-lbox-weu-4766ea','--query','[].{name:name,enabled:attributes.enabled}'])
             if {row['name'] for row in metadata if row['enabled']} & set(SECRET_NAMES) != set(SECRET_NAMES): raise RuntimeError('Two required enabled credential secrets missing')
             parameters = {'deploymentMode':{'value':'Validate' if stage == 'validate' else 'Deploy'}}
@@ -227,8 +306,14 @@ def main(stage,wait_seconds=1200,resume_unsubmitted=False):
         args = ['--subscription',SUB,'-g',RG,'-n',action,'--template-file',str(ROOT / TEMPLATES[stage])]
         if parameters is not None: args += ['--parameters','@-']
         preview = az(['deployment','group','what-if',*args,'--result-format','FullResourcePayloads','--no-pretty-print'],parameters,timeout=300)
-        record['previewChanges'] = check_preview(stage,preview,owned,principal)
+        record['previewChanges'] = check_preview(stage,preview,owned,principal,live_settings=L['rest'](SETTINGS) if stage == 'deploy' else None)
         record['templateSha256'] = hashlib.sha256((ROOT / TEMPLATES[stage]).read_bytes()).hexdigest()
+        if stage == 'deploy':
+            if parameters != {'deploymentMode':{'value':'Deploy'}} or not service_passed(service_result('validate')):
+                raise RuntimeError('Explicit Deploy input and positive current validation required immediately before submission')
+            current_cluster = L['rest'](CLUSTER)
+            if current_cluster['properties'].get('status') != 'ValidationSuccess': raise RuntimeError('Cluster is no longer at ValidationSuccess; do not submit Deploy')
+            record['explicitRequestedMode'] = 'Deploy'
         if stage == 'secrets': parameters = normalise_lcm_parameters(L['secret_parameters']())
         record['status'] = 'apply-pending'; save()
         az(['deployment','group','create',*args,'--no-wait'],parameters,timeout=180); parameters = None
@@ -276,7 +361,9 @@ def main(stage,wait_seconds=1200,resume_unsubmitted=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('stage',choices=list(TEMPLATES)); parser.add_argument('--wait-seconds',type=int,default=1200)
     parser.add_argument('--resume-unsubmitted-secrets',action='store_true')
+    parser.add_argument('--resume-unsubmitted-deploy',action='store_true')
     args = parser.parse_args()
     if not 60 <= args.wait_seconds <= 7200: parser.error('wait bound must be 60–7200 seconds')
     if args.resume_unsubmitted_secrets and args.stage != 'secrets': parser.error('the pre-submission reconciliation applies only to secrets')
-    raise SystemExit(main(args.stage,args.wait_seconds,args.resume_unsubmitted_secrets))
+    if args.resume_unsubmitted_deploy and args.stage != 'deploy': parser.error('the pre-submission preview reconciliation applies only to deploy')
+    raise SystemExit(main(args.stage,args.wait_seconds,args.resume_unsubmitted_secrets,args.resume_unsubmitted_deploy))
