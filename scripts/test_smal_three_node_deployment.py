@@ -11,6 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_postdeploy_observer_uses_documented_renamed_rid500_without_fallback_or_reset(self):
+        source = (ROOT / 'scripts/inspect-smal-three-node-final.ps1').read_text()
+        self.assertIn("$vm.Name + '\\ASBuiltInAdmin'",source)
+        self.assertIn("$admin.SID.Value.EndsWith('-500')",source)
+        self.assertNotIn("$vm.Name + '\\Administrator'",source)
+        self.assertEqual(source.count('New-PSSession -VMId'),1)
+        for forbidden in ['Rename-LocalUser','Set-LocalUser','Enable-LocalUser','Reset-','Set-ADAccountPassword']:
+            self.assertNotIn(forbidden,source)
+
     def test_completed_service_deploy_is_positive_but_not_final_acceptance(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='service_deploy_success_test')
         receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-deploy-observation-follow-up-20261030.json').read_text())

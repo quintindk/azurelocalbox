@@ -394,6 +394,22 @@ from service deployment success.
 
 Reference: [Get-ClusterStorageSpacesDirect syntax](https://learn.microsoft.com/en-us/powershell/module/failoverclusters/get-clusterstoragespacesdirect?view=windowsserver2025-ps).
 
+The corrected Windows observer's safe diagnostic identified the failure as
+**PSDirectException / OpenError** at **LB-NODE01-credential-session**, before any
+cluster/storage query. The query defect above was a separate static bug, not proof
+of the original runtime failure's cause. No attempt is made to reuse the obsolete
+Administrator username again.
+
+Microsoft documents that deployment renames the existing built-in RID 500 account
+from **Administrator** to **ASBuiltInAdmin**. The post-deployment observer now uses
+that exact documented name with the same protected credential role, one attempt
+per node and no fallback. On successful login it must verify the account's SID ends
+in **-500** and matches the current session identity. It never renames an account,
+resets a password, disables the baseline or tries another credential. Historical
+pre-deployment bindings and failed observer receipts remain unchanged.
+
+Reference: [Azure Local local built-in user accounts](https://learn.microsoft.com/en-us/azure/azure-local/concepts/security-features?view=azloc-2610#local-built-in-user-accounts).
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

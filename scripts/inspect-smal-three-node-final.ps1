@@ -17,13 +17,15 @@ $nodes = @(foreach ($target in $targets) {
     $secure = Read-LabGuestSecureSecret -SecretDirectory $store -Role 'cluster-node-admin'; $session = $null
     try {
         $phase = $target.name + '-credential-session'
-        # A failed login stops this observer. No retry/reset against rotated accounts.
-        $session = New-PSSession -VMId $vm.Id -Credential ([pscredential]::new(($vm.Name + '\Administrator'), $secure)) -ErrorAction Stop
+        # Documented post-deployment name of RID 500. One attempt, no fallback or reset.
+        $session = New-PSSession -VMId $vm.Id -Credential ([pscredential]::new(($vm.Name + '\ASBuiltInAdmin'), $secure)) -ErrorAction Stop
         $phase = $target.name + '-cluster-storage-inspection'
         $guest = Invoke-Command -Session $session -ArgumentList $target.name -ErrorAction Stop -ScriptBlock {
             param($ExpectedName)
             $ErrorActionPreference = 'Stop'
             if ($env:COMPUTERNAME -cne $ExpectedName) { throw 'Guest identity differs' }
+            $admin = Get-LocalUser -Name ASBuiltInAdmin
+            if (-not $admin.Enabled -or -not $admin.SID.Value.EndsWith('-500') -or [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -cne $admin.SID.Value) { throw 'Expected existing RID 500 identity differs' }
             $cluster = Get-Cluster -Name smal-localbox01 -ErrorAction Stop
             $quorum = Get-ClusterQuorum -Cluster $cluster
             $s2d = Get-ClusterStorageSpacesDirect -Node $ExpectedName
@@ -32,7 +34,7 @@ $nodes = @(foreach ($target in $targets) {
                 @{ name = $pool.FriendlyName; uniqueId = $pool.UniqueId; health = $pool.HealthStatus.ToString(); operationalStatus = @($pool.OperationalStatus | ForEach-Object ToString); size = $pool.Size; allocated = $pool.AllocatedSize;
                    members = @($pool | Get-PhysicalDisk | ForEach-Object { @{ uniqueId = $_.UniqueId; size = $_.Size; usage = $_.Usage.ToString(); health = $_.HealthStatus.ToString(); mediaType = $_.MediaType.ToString() } }) }
             })
-            @{ name = $env:COMPUTERNAME; domain = (Get-CimInstance Win32_ComputerSystem).Domain; domainRole = (Get-CimInstance Win32_ComputerSystem).DomainRole;
+            @{ name = $env:COMPUTERNAME; observedAdmin = @{ name = $admin.Name; sid = $admin.SID.Value; enabled = $admin.Enabled }; domain = (Get-CimInstance Win32_ComputerSystem).Domain; domainRole = (Get-CimInstance Win32_ComputerSystem).DomainRole;
                clusterName = $cluster.Name; clusterNodes = @(Get-ClusterNode -Cluster $cluster | ForEach-Object { @{ name = $_.Name; state = $_.State.ToString(); nodeWeight = $_.NodeWeight; dynamicWeight = $_.DynamicWeight } });
                quorumType = $quorum.QuorumType.ToString(); quorumResourceName = $(if ($quorum.QuorumResource) { [string]$quorum.QuorumResource.Name } else { $null });
                storageSpacesDirectState = [string]$s2d.State; storagePools = $pools;
