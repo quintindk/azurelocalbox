@@ -38,6 +38,14 @@ No encryption/protector change is applied during diagnosis. Recovery material is
 not printed or exported. The read-only diagnostic uses TPM/status metadata and
 AD recovery-object metadata only, never recovery-password attributes.
 
+At **15:02 SAST**, the AzureStackBitlockerAgent's own read-only BootVolume query
+corroborated Protection Off on all three nodes. All three vTPMs are present, enabled,
+activated and ready. Each OS volume has zero protectors. Four AD recovery objects
+were observed by metadata only, consistent with encrypted data volumes but not
+proof of OS-volume recovery protection. No encryption log files were returned from
+the documented log directory. The cause of the omitted boot encryption remains
+unresolved; it is not attributed to missing TPM hardware.
+
 ### Azure disk tiers were changed after the approved Premium conversion
 
 All ten attached host managed disks now report **Standard_LRS**, including the
@@ -52,11 +60,21 @@ caused it. No disk tier, VM power state, automation schedule or application gran
 is modified in response. Restoring tiers without resolving the competing writer
 would not prevent recurrence.
 
+A subsequent read-only Resource Graph change-history query confirms
+**Premium_LRS → Standard_LRS** transitions for all ten distinct disks. Application
+records identify a **PowerShell** client matching the Activity Log application's
+ID. The owning job/schedule remains unresolved. The query returned 14 records
+(including duplicate/delayed records), with truncation false. This strengthens the
+change evidence without claiming ownership of the external automation.
+
 ### Audit delivery and recovery ownership are not fully verified
 
 The audit export is configured, but the operator's Azure AD-authenticated blob
-metadata read failed. That does not prove delivery failed or that a new role is
-required. No storage key fallback, new grant or public-access change was attempted.
+metadata read failed. A redacted follow-up confirms missing data-plane permission.
+The minimum read-only permission for this check is Blob Data Reader scoped to the
+audit container. No new role grant or activation was attempted. The CLI suggests
+key authentication as an alternative, but that is explicitly forbidden here and
+was not used. Missing read access does not prove delivery failed.
 Read-only recovery metadata checks do not constitute an off-host secured recovery
 export or an accepted recovery test/owner handover.
 
@@ -78,6 +96,9 @@ alone. No workload, AKS system, model or additional storage purchase is included
 - `../deployment-2026-10-29/three-node-independent-acceptance-assessment-20261030.json`.
 - `../deployment-2026-10-29/three-node-disk-and-audit-export-observation-20261030.json`.
 - Disk-write activity and selected application-identity metadata observations.
+- `../deployment-2026-10-27/private-ssh-boot-encryption-recovery-metadata-20261030.json`.
+- `../deployment-2026-10-29/three-node-audit-delivery-redacted-error-20261030.json`.
+- `../deployment-2026-10-29/three-node-disk-tier-resource-changes-20261030.json`.
 
 Original validation failures, rejected pre-submit attempts, observation timeouts,
 initial cloud null projection and failed Windows observers remain retained. The

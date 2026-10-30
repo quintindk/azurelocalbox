@@ -11,6 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_change_history_preserves_real_premium_to_standard_drift_without_mutation(self):
+        record = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-disk-tier-resource-changes-20261030.json').read_text())
+        self.assertEqual(record['status'],'observed')
+        self.assertFalse(record['azureMutationPerformed'])
+        rows = record['changes']; self.assertEqual(len({row['resourceId'].lower() for row in rows}),10)
+        self.assertTrue(all(row['previousSku'] == 'Premium_LRS' and row['newSku'] == 'Standard_LRS' for row in rows))
+        self.assertEqual(record['truncated'],'false')
+
+    def test_boot_agent_and_tpm_metadata_do_not_hide_unencrypted_os_volumes(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-boot-encryption-recovery-metadata-20261030.json').read_text())
+        data = proof['result']; self.assertEqual(data['observationStatus'],'complete-read-only')
+        self.assertFalse(data['recoveryKeysExported']); self.assertFalse(data['mutationPerformed'])
+        self.assertEqual(len(data['nodes']),3)
+        for node in data['nodes']:
+            self.assertTrue(all(node['tpm'][key] for key in ['present','ready','enabled','activated']))
+            self.assertEqual(node['bootVolume']['protectionStatus'],'Off')
+            self.assertEqual(node['bootVolume']['protectorCount'],0)
+            self.assertTrue(node['bitLockerAgent']['observationSucceeded'])
+        self.assertEqual(len(data['adRecoveryMetadata']),4)
+
     def test_independent_acceptance_checks_exact_storage_and_keeps_real_encryption_gap_visible(self):
         h = runpy.run_path(str(ROOT / 'scripts/assess-smal-three-node-acceptance.py'),run_name='independent_acceptance_test')
         proof = json.loads((ROOT / h['WINDOWS']).read_text()); bindings = json.loads((ROOT / h['BINDINGS']).read_text())

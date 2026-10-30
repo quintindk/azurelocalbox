@@ -1,5 +1,14 @@
 # Three-node cluster deployment execution
 
+## Current outcome, 30 October 2026
+
+**Service deployment succeeded. Independent cluster/S2D, bridge and custom-location
+checks passed. Full readiness remains false.** Read-only acceptance identified
+unencrypted OS volumes, all ten Azure host disks changed back to Standard_LRS by
+a later application write, and incomplete audit-delivery/recovery acceptance.
+See [independent acceptance and blockers](../deployment-2026-10-30/independent-acceptance.md).
+Historical failures, approvals and completed-stage receipts below remain unchanged.
+
 ## Verified onboarding and scope
 
 All three local bootstraps are **Succeeded** and all three Arc machines are
