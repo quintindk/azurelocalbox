@@ -143,5 +143,32 @@ class CapacityExpansionTests(unittest.TestCase):
         self.assertIn("'azureMutationPerformed':False",source)
         self.assertIn("'newDiskOrVhdOperationRequested':False",source)
 
+    def test_real_capacity_observation_proves_exact_doubling_and_preservation(self):
+        out = ROOT / 'docs/deployment-2026-10-30'
+        observed = json.loads((out / 'capacity-expansion-converged-observation-20261030.json').read_text())
+        self.assertEqual(observed['status'],'complete-capacity-doubled-existing-data-preserved')
+        self.assertEqual(observed['azureDataCapacityGiB'],8192)
+        self.assertTrue(observed['allElevenHostDisksStandardLrs'])
+        self.assertFalse(observed['azureMutationPerformed'])
+        self.assertFalse(observed['platformReadinessVerified'])
+        baseline = json.loads((out / 'capacity-expansion-prepare-receipt.json').read_text())['result']
+        added = json.loads((out / 'capacity-expansion-add-vhds-after-id-binding-reconciliation-receipt.json').read_text())['result']
+        formatted = json.loads((out / 'capacity-expansion-format-receipt.json').read_text())['result']
+        proof = json.loads((ROOT / observed['observations'][-1]).read_text())
+        result = self.h['verify_growth'](self.plan,baseline,added,proof)
+        self.assertEqual(result['totalMembers'],24)
+        self.assertEqual(result['poolSizeGiB'],4055.98)
+        self.assertEqual(result['activeStorageJobs'],[])
+        self.h['verify_outer_volumes'](proof,baseline,formatted,self.plan)
+        self.assertEqual(added['originalFirstVhdIdRetained'],'2346EBF2-6D1B-48B4-85DB-090E25B7E955')
+
+    def test_post_capacity_arc_bridge_and_private_controls_remain_verified(self):
+        h = runpy.run_path(str(ROOT / 'scripts/assess-smal-three-node-acceptance.py'),run_name='post_capacity_cloud_test')
+        cloud = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cloud-after-capacity-20261030.json').read_text())
+        result = h['verify_cloud'](cloud)
+        self.assertTrue(result['resourceBridgeRunning'])
+        self.assertTrue(result['customLocationSucceededAndBound'])
+        self.assertTrue(result['privateAccessControlsPreserved'])
+
 
 if __name__ == '__main__': unittest.main()

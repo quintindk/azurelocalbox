@@ -4,8 +4,10 @@
 
 **Service deployment succeeded. Independent cluster/S2D, bridge and custom-location
 checks passed. Full readiness remains false.** Read-only acceptance identified
-unencrypted OS volumes, all ten Azure host disks changed back to Standard_LRS by
-a later application write, and incomplete audit-delivery/recovery acceptance.
+unencrypted OS volumes and incomplete audit-delivery/recovery acceptance.
+The human subsequently accepted Standard_LRS after the documented overnight tier
+change. A supported additive expansion now provides 24 S2D devices and 8 TiB Azure
+data backing, with existing OS/pool/CSV identities and sizes preserved.
 See [independent acceptance and blockers](../deployment-2026-10-30/independent-acceptance.md).
 Historical failures, approvals and completed-stage receipts below remain unchanged.
 

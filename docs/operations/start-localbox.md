@@ -134,3 +134,17 @@ verified, no VPN reconnect, no host/guest start requests, all four heartbeats he
 The automatic connect/reconnect branches were tested offline, not by deliberately
 interrupting the restored live tunnel. Live receipt:
 `../deployment-2026-10-29/start-20261030-054709-2b4f739f.json`.
+
+## After additive capacity expansion
+
+The same daily startup still starts the **same four guests**, with no topology or
+startup command change. The deployed cluster now has **24** approved S2D data VHDXs,
+eight per node, and the host has an additional independent **X:** data volume.
+Standard_LRS is the current human-approved tier. Original 12-device and Premium
+receipts are historical baselines, not current-state requirements.
+
+Use the [approved capacity manifest and independent result](../deployment-2026-10-30/capacity-expansion.md)
+for post-start storage checks. Do not apply the original standalone/pre-deployment
+12-device acceptance gate to the deployed, expanded cluster. Startup itself only
+restores the original VM identities and checks heartbeats; it never resets accounts,
+re-registers Arc, recreates storage or runs cluster deployment.

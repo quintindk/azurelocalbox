@@ -3,8 +3,24 @@
 ## Outcome
 
 **Deployment succeeded. Full platform readiness is not accepted.** Service success
-and independent cluster/cloud health are verified, but boot encryption, Premium
-disk-tier drift and recovery/export acceptance remain unresolved.
+and independent cluster/cloud health are verified, but boot encryption and
+recovery/audit-export acceptance remain unresolved. The original Premium-tier drift
+is retained below as history; the later human decision accepts Standard_LRS.
+
+### Later approved capacity/tier decision
+
+The human subsequently accepted **Standard_LRS** as the desired lab tier and
+withdrew the WorkIQ request, taking the exemption investigation personally. Premium
+is therefore no longer the active tier requirement. The original drift evidence
+below remains historical and is not rewritten.
+
+The separately approved supported additive expansion completed online and was
+independently verified at **15:53 SAST**: Azure data backing **4 → 8 TiB**, S2D
+members **12 → 24**, and pool capacity **2,027.99 → 4,055.98 GiB**. Original OS,
+data-disk, pool and CSV identities/sizes were preserved. All eleven Azure disks
+remain Standard_LRS. See [capacity expansion](capacity-expansion.md).
+Boot encryption and audit-delivery/recovery acceptance remain unresolved, so full
+platform readiness is still false. Automatic redistribution completion is not claimed.
 
 ## Independently verified at 14:53 SAST on 30 October 2026
 

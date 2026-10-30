@@ -139,6 +139,40 @@ preserved C:/V:/W:, the exact new X: identity/reserve, 8 TiB Azure data backing 
 all eleven managed disks Standard_LRS. Completed AddPhysicalDisk records are not
 mislabelled as active jobs or proof of completed automatic optimization.
 
+## Completed and independently verified
+
+At **15:53 SAST on 30 October 2026**, the read-only convergence observation passed:
+
+- Azure backing data capacity is **8,192 GiB**, up from **4,096 GiB**.
+- All **eleven** attached managed disks are **Standard_LRS**. Original ten disk
+  identities, sizes and ownership remain unchanged.
+- Each node has **eight 170 GiB S2D devices**. All three views agree on exactly
+  **24 Healthy members**, comprising the original twelve plus the twelve newly
+  bound guest IDs, in the **same S2D pool**.
+- Pool capacity is **4,055.98 GiB**, up from **2,027.99 GiB**.
+- All three nodes remain Up, four CSVs Online, original five virtual-disk GUIDs
+  and sizes unchanged, with healthy three-copy mirrors and no witness.
+- All original host/guest OS disk sizes, C:/V:/W: identities and the eight-member
+  outer pool are preserved. The exact new X: volume is Healthy with **4,094.70 GiB**
+  free at the observation. Dynamic VHD maximum capacity remains bounded below X:.
+- No storage jobs were active at that read. Automatic optimization may still
+  start later; redistribution completion has not been claimed.
+- No host/guest shutdown, cluster redeployment, policy/automation change, new
+  role grant, secret reset or workload deployment was performed.
+
+Post-expansion cloud reads also verified the three Arc identities Connected,
+resource bridge Running, custom location Succeeded/bound, service Deploy still
+Success, vault public access Disabled and storage public access Disabled/Shared
+Key false. The pre-existing boot-encryption and recovery/audit-delivery gaps remain.
+
+Evidence:
+
+- `capacity-expansion-converged-observation-20261030.json`.
+- `../deployment-2026-10-27/private-ssh-capacity-convergence-20261030-0.json`.
+- `../deployment-2026-10-29/three-node-cloud-after-capacity-20261030.json`.
+- All individual prepare/create/attach/format/add-VHD receipts, the retained
+  encoder interruption/admission records and the early non-converged snapshot.
+
 ## References
 
 - [S2D in a guest cluster: unsupported host-level size changes and adding capacity](https://learn.microsoft.com/en-us/windows-server/storage/storage-spaces/storage-spaces-direct-in-vm).
