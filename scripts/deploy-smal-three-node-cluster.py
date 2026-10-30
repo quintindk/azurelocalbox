@@ -94,6 +94,8 @@ def previous(stage):
     if stage == 'validate' and gateway_reconciled.exists() and validation_success.exists(): path = validation_success
     deploy_reconciled = OUT / 'three-node-cluster-deploy-after-preview-reconciliation-receipt.json'
     if stage == 'deploy' and deploy_reconciled.exists(): path = deploy_reconciled
+    deploy_observation = OUT / 'three-node-cluster-deploy-observation-20261030.json'
+    if stage == 'deploy' and deploy_reconciled.exists() and deploy_observation.exists(): path = deploy_observation
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result

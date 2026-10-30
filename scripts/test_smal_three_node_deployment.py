@@ -11,6 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_existing_deploy_observer_requires_exact_retained_request_and_cannot_submit(self):
+        h = runpy.run_path(str(ROOT / 'scripts/observe-smal-existing-deploy.py'),run_name='deploy_observer_test')
+        prior = json.loads((ROOT / h['ORIGINAL']).read_text())
+        self.assertEqual(h['verify_original'](prior),prior['templateSha256'])
+        for field,value in [('stage','validate'),('deploymentState','Succeeded'),('explicitRequestedMode','Validate'),('templateSha256','changed'),('deploymentId','other')]:
+            bad = copy.deepcopy(prior); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_original'](bad)
+        source = (ROOT / 'scripts/observe-smal-existing-deploy.py').read_text()
+        for forbidden in ["'create'","'put'","'update'","'start'","'delete'"]:
+            self.assertNotIn(forbidden,source)
+        self.assertIn("'azureMutationPerformed':False",source)
+
     def test_deploy_configuration_only_normalises_exact_observed_empty_defaults(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='deploy_defaults_test')
         live = {'scaleUnits':[{'deploymentData':{'cluster':{'name':'smal-localbox01','witnessType':'','witnessPath':'','cloudAccountName':'','azureServiceEndpoint':'','hardwareClass':'Medium'},

@@ -332,6 +332,26 @@ References:
 - [ARM what-if change types](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deploy-what-if#change-types).
 - [Azure Local ARM deployment workflow](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610).
 
+## Deploy accepted and still running after observer timeout
+
+The original Deploy ARM identity was submitted exactly once after the guarded
+pre-submit reconciliation. At **12:21 SAST on 30 October**, its bounded observer
+ended with ARM **Running**, not Failed. Live readback confirms settings mode
+**Deploy**, cluster **DeploymentInProgress** and reported deployment **InProgress**.
+No reported step exception is present.
+
+The service reports Success for cluster creation, networking, Azure registration,
+storage configuration, CSV encryption and OS-volume encryption. **Copy and prepare
+files** is InProgress, with later steps pending. These are service-reported
+milestones, not independent cluster/S2D/bridge/custom-location acceptance.
+
+The submitted request must not be replayed and Validate must not be invoked during
+or after a deployment failure. `scripts/observe-smal-existing-deploy.py` observes
+only this exact accepted request with read-only GETs, preserving the original
+timeout receipt and writing a separate observation. No repair, restart or resource
+mutation is performed. Full readiness remains false pending service completion
+and independent post-deployment checks.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).
