@@ -60,7 +60,23 @@ def verify_echo_recovery(fix,proof):
         raise RuntimeError('Current gateway echo rule scope drifted')
 
 
-def main(wait_seconds=1800,gateway_echo=False):
+def verify_unsubmitted_gateway(prior,reconciliation):
+    current_hash = hashlib.sha256((ROOT / D['TEMPLATES']['validate']).read_bytes()).hexdigest()
+    if (prior.get('status') != 'failed-inspect-before-resume' or prior.get('stage') != 'validate'
+            or prior.get('deploymentName') != 'localbox-three-node-validate-gateway-echo-20261029'
+            or prior.get('templateSha256') != current_hash or prior.get('deploySubmitted') is not False
+            or any(key in prior for key in ['previewChanges','deploymentId','deploymentState'])
+            or not prior.get('currentGatewayEchoProof')):
+        raise RuntimeError('Not the exact retained pre-preview gateway validation refusal')
+    if (reconciliation.get('status') != 'read-only-reconciled-before-submission-authorization-refusal'
+            or reconciliation.get('errorCode') != 'AuthorizationFailed'
+            or reconciliation.get('deniedAction') != 'Microsoft.Resources/deployments/whatIf/action'
+            or reconciliation.get('gatewayRetryOrDeployArmRecords') != []
+            or reconciliation.get('azureMutationPerformed') is not False):
+        raise RuntimeError('Exact unsubmitted what-if authorisation-refusal proof missing')
+
+
+def main(wait_seconds=1800,gateway_echo=False,resume_unsubmitted=False):
     paths = ['scripts/retry-smal-initial-validation.py','scripts/smal-validation-recovery.py','scripts/deploy-smal-three-node-cluster.py',
         'infra/arm/localbox-three-node-settings.json','docs/deployment-2026-10-29/three-node-cluster-validate-receipt.json',
         'docs/deployment-2026-10-29/lcm-credential-format-correction-receipt.json']
@@ -71,10 +87,21 @@ def main(wait_seconds=1800,gateway_echo=False):
                   'docs/deployment-2026-10-29/three-node-corrected-validation-observation.json','scripts/inspect-smal-infra-network-failure.ps1','scripts/smal-private-powershell.py']
         action = 'localbox-three-node-validate-gateway-echo-20261029'; filename = 'three-node-cluster-validate-after-gateway-echo-receipt.json'
         expected_error = REC['NETWORK_ERROR']
+    if resume_unsubmitted:
+        if not gateway_echo: raise RuntimeError('Only the exact unsubmitted gateway retry may be reconciled')
+        prior_name = 'docs/deployment-2026-10-29/three-node-cluster-validate-after-gateway-echo-receipt.json'
+        refusal_name = 'docs/deployment-2026-10-29/gateway-validation-unsubmitted-auth-reconciliation.json'
+        paths += [prior_name,refusal_name,'docs/deployment-2026-10-29/gateway-validation-access-restored-20261030.json']
+        filename = 'three-node-cluster-validate-gateway-after-auth-reconciliation-receipt.json'
     head = D['A']['source_guard'](paths)
     path = OUT / filename
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'status':'pending','stage':'validate',
               'deploymentName':action,'initialValidationOnly':True,'deploySubmitted':False,'clusterReapplied':False,'rolesOrSecretsReapplied':False,'platformReadinessVerified':False}
+    if resume_unsubmitted:
+        prior_bytes = (ROOT / prior_name).read_bytes()
+        verify_unsubmitted_gateway(json.loads(prior_bytes),json.loads((ROOT / refusal_name).read_text()))
+        record['originalUnsubmittedRefusalRetained'] = True
+        record['originalUnsubmittedReceiptSha256'] = hashlib.sha256(prior_bytes).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
     try:
@@ -92,10 +119,12 @@ def main(wait_seconds=1800,gateway_echo=False):
         current_secret = D['az'](['keyvault','secret','show','--subscription',D['SUB'],'--vault-name','kv-lbox-weu-4766ea','--name',D['NAME'] + '-AzureStackLCMUserCredential','--query','{id:id,enabled:attributes.enabled}'])
         if current_secret != {'id':fix['newVersionId'],'enabled':True}: raise RuntimeError('Corrected LCM secret latest metadata differs')
         if D['az'](['deployment','group','list','--subscription',D['SUB'],'-g',D['RG'],'--query',"[?name=='" + action + "'].name"]): raise RuntimeError('Retry deployment identity already exists. Inspect, never repeat.')
-        record['privateInputsReceipt'] = D['inspect_inputs']('validate-gateway-echo-fix' if gateway_echo else 'validate-lcm-format-fix')
+        input_stage = 'validate-gateway-auth-resume' if resume_unsubmitted else ('validate-gateway-echo-fix' if gateway_echo else 'validate-lcm-format-fix')
+        record['privateInputsReceipt'] = D['inspect_inputs'](input_stage)
         if gateway_echo:
-            with contextlib.redirect_stdout(io.StringIO()): code = D['T']['main']('scripts/inspect-smal-infra-network-failure.ps1','infra-network-before-validation-retry-20261029')
-            network_path = D['T']['OUT'] / 'private-ssh-infra-network-before-validation-retry-20261029.json'
+            network_name = 'infra-network-before-validation-auth-resume-20261030' if resume_unsubmitted else 'infra-network-before-validation-retry-20261029'
+            with contextlib.redirect_stdout(io.StringIO()): code = D['T']['main']('scripts/inspect-smal-infra-network-failure.ps1',network_name)
+            network_path = D['T']['OUT'] / ('private-ssh-' + network_name + '.json')
             if code != 0: raise RuntimeError('Current pre-retry network inspection failed')
             verify_echo_recovery(json.loads((OUT / 'gateway-echo-rule-receipt.json').read_text()),json.loads(network_path.read_text()))
             record['currentGatewayEchoProof'] = str(network_path.relative_to(ROOT))
@@ -132,6 +161,8 @@ def main(wait_seconds=1800,gateway_echo=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('--wait-seconds',type=int,default=1800)
-    parser.add_argument('--after-gateway-echo-fix',action='store_true'); args = parser.parse_args()
+    parser.add_argument('--after-gateway-echo-fix',action='store_true')
+    parser.add_argument('--resume-unsubmitted-gateway',action='store_true'); args = parser.parse_args()
     if not 60 <= args.wait_seconds <= 7200: parser.error('wait bound must be 60–7200 seconds')
-    raise SystemExit(main(args.wait_seconds,args.after_gateway_echo_fix))
+    if args.resume_unsubmitted_gateway and not args.after_gateway_echo_fix: parser.error('unsubmitted reconciliation requires --after-gateway-echo-fix')
+    raise SystemExit(main(args.wait_seconds,args.after_gateway_echo_fix,args.resume_unsubmitted_gateway))

@@ -215,6 +215,28 @@ Evidence:
 - `gateway-validation-unsubmitted-auth-reconciliation.json` (read-only absence/state proof).
 - Fresh private input and pre-retry network observations.
 
+## Access restored and exact unsubmitted attempt reconciliation
+
+On **30 October 2026**, the human confirmed PIM roles activated and requested
+continuation after startup/health checks. The host and all four guests are running.
+Read-only checks verified current Arc, bootstrap, AD, exact RAW storage and private
+network health. At **07:56 SAST**, an actual ARM what-if succeeded and showed only
+**NoChange** for the same existing deploymentSettings resource. The gateway-retry
+deployment identity is still absent and the cluster retains the exact terminal
+network ValidationFailed state, with no deployment started.
+
+`--resume-unsubmitted-gateway` requires the committed pre-preview refusal, exact
+retained AuthorizationFailed reconciliation and unchanged settings-template hash.
+It uses the **original gateway-retry ARM deployment identity**, not a new service
+attempt. It retains the refused receipt and writes a separate reconciliation receipt.
+Fresh node/storage/AD, effective rule/echo, secret-version metadata, authorisation
+and terminal non-deployment state checks still run before one permitted submission.
+
+The operator did not activate roles, broaden permissions or overwrite historical
+receipts. Evidence: `gateway-validation-access-restored-20261030.json` and the
+daily startup/health observations. Deploy remains gated on a positive reported
+validation result, matching settings hash and current service state.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

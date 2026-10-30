@@ -11,6 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_gateway_auth_resumption_refuses_any_possible_prior_submission_or_changed_settings(self):
+        h = runpy.run_path(str(ROOT / 'scripts/retry-smal-initial-validation.py'),run_name='gateway_auth_resume_test')
+        out = ROOT / 'docs/deployment-2026-10-29'
+        prior = json.loads((out / 'three-node-cluster-validate-after-gateway-echo-receipt.json').read_text())
+        reconciled = json.loads((out / 'gateway-validation-unsubmitted-auth-reconciliation.json').read_text())
+        h['verify_unsubmitted_gateway'](prior,reconciled)
+        for field,value in [('deploymentId','submitted'),('deploymentState','Running'),('previewChanges',[]),('templateSha256','changed'),('deploySubmitted',True)]:
+            bad = copy.deepcopy(prior); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_unsubmitted_gateway'](bad,reconciled)
+        for field,value in [('gatewayRetryOrDeployArmRecords',['exists']),('azureMutationPerformed',True),('deniedAction','different')]:
+            bad = copy.deepcopy(reconciled); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_unsubmitted_gateway'](prior,bad)
+
     def test_gateway_retry_authorization_refusal_is_retained_and_unsubmitted(self):
         out = ROOT / 'docs/deployment-2026-10-29'
         refused = json.loads((out / 'three-node-cluster-validate-after-gateway-echo-receipt.json').read_text())
