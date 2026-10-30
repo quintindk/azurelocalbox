@@ -11,6 +11,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_completed_service_deploy_is_positive_but_not_final_acceptance(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='service_deploy_success_test')
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-deploy-observation-follow-up-20261030.json').read_text())
+        self.assertEqual(receipt['status'],'complete')
+        self.assertEqual(receipt['deploymentState'],'Succeeded')
+        self.assertTrue(h['service_passed'](receipt['serviceResult']))
+        self.assertFalse(receipt['platformReadinessVerified'])
+        self.assertFalse(receipt['azureMutationPerformed'])
+        self.assertTrue(receipt['originalTimeoutRetained'])
+
+    def test_final_observer_uses_documented_node_parameter_and_cloud_audit_handles_cli_shape(self):
+        source = (ROOT / 'scripts/inspect-smal-three-node-final.ps1').read_text()
+        self.assertIn('Get-ClusterStorageSpacesDirect -Node $ExpectedName',source)
+        self.assertNotIn('Get-ClusterStorageSpacesDirect -Cluster',source)
+        self.assertIn("observationStatus = 'failed-safe-diagnostic'",source)
+        h = runpy.run_path(str(ROOT / 'scripts/inspect-smal-three-node-cloud-health.py'),run_name='audit_shape_test')
+        data = [{'name':'audit','storageAccountId':'synthetic','logs':[{'category':'AuditEvent','enabled':True}],'unwanted':'not-exported'}]
+        self.assertEqual(h['audit_metadata'](data),h['audit_metadata']({'value':data}))
+        self.assertNotIn('unwanted',h['audit_metadata'](data)[0])
+        with self.assertRaises(RuntimeError): h['audit_metadata'](None)
+
     def test_deploy_follow_up_preserves_exact_pending_observation_and_never_replays(self):
         h = runpy.run_path(str(ROOT / 'scripts/observe-smal-existing-deploy.py'),run_name='deploy_follow_up_test')
         prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-deploy-observation-20261030.json').read_text())

@@ -364,6 +364,36 @@ The original accepted-request timeout and this observation remain unchanged.
 deployment, bound to the committed prior observation hash and unchanged template.
 It cannot invoke Validate/Deploy, modify infrastructure or overwrite prior receipts.
 
+## Deploy service success and independent acceptance
+
+At **14:44 SAST on 30 October**, the read-only follow-up confirmed ARM **Succeeded**,
+settings **Succeeded / Deploy**, service deployment **Success** and every reported
+step Success with zero exceptions. Cluster status is **ConnectedRecently**. The
+original refusals, validation failures and both observation timeouts remain intact.
+
+Independent cloud GETs subsequently confirmed all three Arc identities Connected,
+**smal-localbox01-arcbridge** provisioning Succeeded/status Running, and custom
+location **cl-localbox-smal-weu-1** Succeeded and bound to that bridge. Vault public
+access remains Disabled, RBAC/purge protection enabled and soft-delete retention
+90 days. Both platform storage accounts retain public access Disabled and Shared
+Key false. No acceptance operation changes those controls.
+
+The operator VPN had again lost its private routes. The approved startup helper
+reconnected only the existing profile and verified the private path without any VM
+start or Azure mutation. The initial local acceptance then failed in the prepared
+observer. Static review found its unsupported `Get-ClusterStorageSpacesDirect -Cluster`
+argument. The corrected observer uses the documented **-Node** parameter, retains
+the failed receipt, and returns only safe phase/type metadata on any further error.
+It does not reset credentials, retry a failed login or repair storage/services.
+
+The cloud collector also corrects the CLI diagnostic-settings response shape
+(flattened list versus ARM value wrapper). Its original null projection is retained
+as an observation, not treated as proof that vault audit export is missing.
+Windows/S2D, encryption, capacity, exports and recovery acceptance remain separate
+from service deployment success.
+
+Reference: [Get-ClusterStorageSpacesDirect syntax](https://learn.microsoft.com/en-us/powershell/module/failoverclusters/get-clusterstoragespacesdirect?view=windowsserver2025-ps).
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).
