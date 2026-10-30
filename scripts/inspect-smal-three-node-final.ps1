@@ -38,7 +38,7 @@ $nodes = @(foreach ($target in $targets) {
                clusterName = $cluster.Name; clusterNodes = @(Get-ClusterNode -Cluster $cluster | ForEach-Object { @{ name = $_.Name; state = $_.State.ToString(); nodeWeight = $_.NodeWeight; dynamicWeight = $_.DynamicWeight } });
                quorumType = $quorum.QuorumType.ToString(); quorumResourceName = $(if ($quorum.QuorumResource) { [string]$quorum.QuorumResource.Name } else { $null });
                storageSpacesDirectState = [string]$s2d.State; storagePools = $pools;
-               virtualDisks = @(Get-VirtualDisk | ForEach-Object { @{ name = $_.FriendlyName; health = $_.HealthStatus.ToString(); size = $_.Size; footprint = $_.FootprintOnPool; resiliency = $_.ResiliencySettingName; dataCopies = $_.NumberOfDataCopies; provisioning = $_.ProvisioningType.ToString() } });
+               virtualDisks = @(Get-VirtualDisk | ForEach-Object { @{ name = $_.FriendlyName; uniqueId = $_.UniqueId; health = $_.HealthStatus.ToString(); size = $_.Size; footprint = $_.FootprintOnPool; resiliency = $_.ResiliencySettingName; dataCopies = $_.NumberOfDataCopies; provisioning = $_.ProvisioningType.ToString() } });
                csv = @(Get-ClusterSharedVolume -Cluster $cluster | ForEach-Object { @{ name = $_.Name; state = $_.State.ToString(); owner = [string]$_.OwnerNode.Name;
                    volumes = @($_.SharedVolumeInfo | ForEach-Object { @{ path = $_.FriendlyVolumeName; size = $_.Partition.Size; free = $_.Partition.FreeSpace } }) } });
                storageJobs = @(Get-StorageJob | ForEach-Object { @{ name = $_.Name; state = [string]$_.JobState; percentComplete = $_.PercentComplete } });

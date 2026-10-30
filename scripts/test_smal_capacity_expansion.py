@@ -1,0 +1,103 @@
+"""Offline additive-capacity boundaries. No real disks or guests are changed."""
+import copy
+import json
+from pathlib import Path
+import runpy
+import subprocess
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class CapacityExpansionTests(unittest.TestCase):
+    def setUp(self):
+        self.h = runpy.run_path(str(ROOT / 'scripts/smal-capacity-expansion.py'),run_name='capacity_test')
+        self.plan = self.h['load_plan']()
+
+    def test_exact_approved_addition_doubles_data_not_os_or_existing_disk_sizes(self):
+        plan = self.plan
+        self.assertEqual(len(plan['existingDisks']),10)
+        data_gib = sum(r['sizeGiB'] for r in plan['existingDisks'] if r['id'].lower() != plan['vmBefore']['osId'].lower())
+        self.assertEqual(data_gib,4096); self.assertEqual(plan['newDisk']['sizeGiB'],4096)
+        self.assertEqual(plan['newDisk']['sku'],'Standard_LRS')
+        self.assertEqual(sum(len(n['newDisks']) for n in plan['nodes'].values()),12)
+        self.assertTrue(all(d['sizeBytes'] == 170*1024**3 for n in plan['nodes'].values() for d in n['newDisks']))
+        self.assertFalse(plan['existingOsDisksOrDiskSizesChanged']); self.assertFalse(plan['csvSizesChanged'])
+        self.assertEqual(plan['retailReference']['capacityUsdPerMonth'],192.1)
+
+    def test_cloud_preview_allows_only_the_one_empty_private_standard_disk(self):
+        disk = self.plan['newDisk']
+        data = {'status':'Succeeded','changes':[{'resourceId':disk['id'],'changeType':'Create','after':{'type':'Microsoft.Compute/disks','location':'southafricanorth',
+            'sku':{'name':'Standard_LRS'},'properties':{'diskSizeGB':4096,'creationData':{'createOption':'Empty'},'networkAccessPolicy':'DenyAll','publicNetworkAccess':'Disabled'}}}]}
+        self.h['validate_preview'](data,set(),self.plan)
+        for key,value in [('diskSizeGB',8192),('publicNetworkAccess','Enabled'),('creationData',{'createOption':'Copy'})]:
+            bad = copy.deepcopy(data); bad['changes'][0]['after']['properties'][key] = value
+            with self.assertRaises(RuntimeError): self.h['validate_preview'](bad,set(),self.plan)
+        bad = copy.deepcopy(data); bad['changes'][0]['changeType'] = 'Modify'
+        with self.assertRaises(RuntimeError): self.h['validate_preview'](bad,set(),self.plan)
+        built = subprocess.run(['az','bicep','build','--file',str(ROOT / self.h['TEMPLATE']),'--stdout','--only-show-errors'],check=True,capture_output=True,text=True,timeout=90)
+        resources = json.loads(built.stdout)['resources']; self.assertEqual(len(resources),1)
+        self.assertEqual(resources[0]['type'],'Microsoft.Compute/disks')
+
+    def test_existing_managed_disk_id_size_sku_owner_and_unique_id_are_immutable(self):
+        rows = copy.deepcopy(self.plan['existingDisks']); self.h['verify_existing_disks'](rows,self.plan)
+        for key,value in [('sizeGiB',8192),('sku','Premium_LRS'),('uniqueId','other'),('managedBy','/other-vm'),('id','/other-disk')]:
+            bad = copy.deepcopy(rows); bad[0][key] = value
+            with self.assertRaises(RuntimeError): self.h['verify_existing_disks'](bad,self.plan)
+
+    def test_attachment_cannot_change_existing_luns_os_or_cache(self):
+        vm = copy.deepcopy(self.plan['vmBefore']); self.h['verify_vm'](vm,self.plan)
+        vm['data'].append({'id':self.plan['newDisk']['id'],'lun':9,'caching':'None','deleteOption':None})
+        self.h['verify_vm'](vm,self.plan,attached=True)
+        for key,value in [('lun',8),('caching','ReadWrite'),('deleteOption','Delete')]:
+            bad = copy.deepcopy(vm); bad['data'][-1][key] = value
+            with self.assertRaises(RuntimeError): self.h['verify_vm'](bad,self.plan,attached=True)
+        vm['osId'] = 'other-os'
+        with self.assertRaises(RuntimeError): self.h['verify_vm'](vm,self.plan,attached=True)
+
+    def test_expansion_scripts_parse_after_public_prelude_rendering(self):
+        prelude = (ROOT / 'scripts/smal-capacity-prelude.ps1').read_text()
+        for path in self.h['SCRIPTS'].values():
+            source = (ROOT / path).read_text().replace('__CAPACITY_PRELUDE__',prelude)
+            # Parser only. Neither the prelude nor any operation is executed.
+            command = '$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}'
+            subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-Command',command],input=source,text=True,check=True,capture_output=True,timeout=30)
+
+    def test_no_pooled_resize_reset_or_cluster_recreation_exists(self):
+        for path in [*self.h['SCRIPTS'].values(),'scripts/smal-capacity-prelude.ps1']:
+            source = (ROOT / path).read_text()
+            for forbidden in ['Resize-VHD','Resize-VirtualDisk','Resize-Partition','Reset-PhysicalDisk','Clear-Disk','New-StoragePool','New-VM ','Remove-VM','Stop-VM','Enable-ClusterS2D']:
+                self.assertNotIn(forbidden,source)
+        fmt = (ROOT / self.h['SCRIPTS']['format']).read_text()
+        self.assertIn('Initialize-Disk -UniqueId $disk.UniqueId',fmt)
+        self.assertIn("$disk.PartitionStyle.ToString() -ne 'RAW'",fmt)
+        self.assertIn('[IO.FileMode]::CreateNew',fmt)
+        add = (ROOT / self.h['SCRIPTS']['add-vhds']).read_text()
+        self.assertIn('New-VHD -Path $spec.path -Dynamic -SizeBytes 170GB',add)
+        self.assertIn('Add-VMHardDiskDrive -VM $vm',add)
+
+    def growth_fixture(self):
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-final-cluster-storage-postdeploy-identity-20261030.json').read_text())
+        new = [{'guestUniqueId':'synthetic-new-' + str(i),'sizeBytes':170*1024**3,'attached':True} for i in range(12)]
+        baseline = {'cluster':[]}
+        for row in proof['result']['nodes']:
+            guest = row['guest']
+            for disk in guest['virtualDisks']: disk['uniqueId'] = 'synthetic-' + disk['name']
+            baseline['cluster'].append({'name':row['name'],'poolSize':guest['storagePools'][0]['size'],'virtualDisks':copy.deepcopy(guest['virtualDisks'])})
+            guest['storagePools'][0]['size'] *= 2
+            guest['storagePools'][0]['members'] += [{'uniqueId':r['guestUniqueId'],'size':r['sizeBytes'],'health':'Healthy'} for r in new]
+        return baseline,{'disks':new},proof
+
+    def test_growth_requires_all_24_exact_devices_and_preserves_existing_volumes(self):
+        baseline,added,proof = self.growth_fixture()
+        result = self.h['verify_growth'](self.plan,baseline,added,proof)
+        self.assertEqual(result['totalMembers'],24)
+        self.assertTrue(result['existingVirtualDiskSizesAndIdsPreserved'])
+        self.assertFalse(result['platformReadinessVerified'])
+        bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['storagePools'][0]['members'][-1]['uniqueId'] = 'foreign'
+        with self.assertRaises(RuntimeError): self.h['verify_growth'](self.plan,baseline,added,bad)
+        bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['virtualDisks'][0]['size'] *= 2
+        with self.assertRaises(RuntimeError): self.h['verify_growth'](self.plan,baseline,added,bad)
+
+
+if __name__ == '__main__': unittest.main()

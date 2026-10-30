@@ -110,7 +110,7 @@ def render_node03_console(installer, console, proof, approval, commit):
             .replace('__NODE03_CONSOLE_SHA256__', hashlib.sha256(console).hexdigest().upper()).encode())
 
 
-def main(script, name, envelope_key=None, three_node_context=None):
+def main(script, name, envelope_key=None, three_node_context=None, capacity_context=None):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name):
         raise RuntimeError('Invalid receipt name')
     target = OUT / f'private-ssh-{name}.json'
@@ -156,6 +156,20 @@ def main(script, name, envelope_key=None, three_node_context=None):
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
+    capacity_scripts = {'scripts/prepare-smal-capacity-expansion.ps1','scripts/format-smal-capacity-disk.ps1','scripts/add-smal-capacity-vhds.ps1'}
+    if relative in capacity_scripts:
+        guard = runpy.run_path(str(ROOT / 'scripts/smal-capacity-expansion.py'),run_name='capacity_transport_guard')
+        guard['source_guard']()
+        if not isinstance(capacity_context,dict) or set(capacity_context) != {'planBase64','approvalBase64','azureDiskUniqueId'}:
+            raise RuntimeError('Exact public capacity context required')
+        if relative != 'scripts/prepare-smal-capacity-expansion.ps1': uuid.UUID(capacity_context['azureDiskUniqueId'])
+        for key,path in [('planBase64',guard['PLAN_PATH']),('approvalBase64',guard['APPROVAL_PATH'])]:
+            if base64.b64decode(capacity_context[key],validate=True) != (ROOT / path).read_bytes(): raise RuntimeError('Capacity plan/approval context differs from committed bytes')
+        public = json.dumps(capacity_context,sort_keys=True,separators=(',',':')).encode()
+        prelude = (ROOT / 'scripts/smal-capacity-prelude.ps1').read_text().replace('__CAPACITY_CONTEXT_BASE64__',base64.b64encode(public).decode()).replace('__CAPACITY_CONTEXT_SHA256__',hashlib.sha256(public).hexdigest().upper()).replace('__CAPACITY_SOURCE_COMMIT__',head)
+        source = source.decode().replace('__CAPACITY_PRELUDE__',prelude).encode()
+    elif capacity_context is not None:
+        raise RuntimeError('Capacity context accepted only by the three approved expansion scripts')
     three_node_scripts = {'scripts/prepare-smal-node03-disk.ps1', 'scripts/format-smal-node03-disk.ps1', 'scripts/inspect-smal-node03-disk.ps1', 'scripts/resize-smal-existing-nodes.ps1', 'scripts/install-smal-node03-job.ps1', 'scripts/install-smal-node03-arc-console.ps1'}
     if relative in three_node_scripts:
         guard = runpy.run_path(str(ROOT / 'scripts/smal-three-node-approval.py'), run_name='three_node_transport_guard')
@@ -396,6 +410,9 @@ def main(script, name, envelope_key=None, three_node_context=None):
                      'scripts/inspect-smal-three-node-live.ps1': 240,
                      'scripts/inspect-smal-three-node-final.ps1': 300,
                      'scripts/inspect-smal-bitlocker-gap.ps1': 300,
+                     'scripts/prepare-smal-capacity-expansion.ps1': 300,
+                     'scripts/format-smal-capacity-disk.ps1': 300,
+                     'scripts/add-smal-capacity-vhds.ps1': 600,
                      'scripts/inspect-smal-infra-network-failure.ps1': 240,
                      'scripts/stop-smal-guests-for-premium.ps1': 240,
                      'scripts/format-smal-node03-disk.ps1': 240,
