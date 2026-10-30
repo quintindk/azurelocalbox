@@ -96,6 +96,8 @@ def previous(stage):
     if stage == 'deploy' and deploy_reconciled.exists(): path = deploy_reconciled
     deploy_observation = OUT / 'three-node-cluster-deploy-observation-20261030.json'
     if stage == 'deploy' and deploy_reconciled.exists() and deploy_observation.exists(): path = deploy_observation
+    deploy_follow_up = OUT / 'three-node-cluster-deploy-observation-follow-up-20261030.json'
+    if stage == 'deploy' and deploy_observation.exists() and deploy_follow_up.exists(): path = deploy_follow_up
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result

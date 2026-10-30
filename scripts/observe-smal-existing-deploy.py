@@ -30,15 +30,32 @@ def verify_original(prior):
     return current_hash
 
 
-def main(wait_seconds):
-    head = D['A']['source_guard'](['scripts/observe-smal-existing-deploy.py','scripts/deploy-smal-three-node-cluster.py',
-                                  D['TEMPLATES']['deploy'],ORIGINAL])
+def verify_follow_up(prior,template_hash):
+    expected_id = D['SCOPE'] + '/providers/Microsoft.Resources/deployments/' + ACTION
+    if (prior.get('stage') != 'deploy' or prior.get('deploymentName') != ACTION
+            or prior.get('deploymentId','').lower() != expected_id.lower() or prior.get('templateSha256') != template_hash
+            or prior.get('status') != 'uncertain-or-still-running-inspect-do-not-repeat' or prior.get('deploymentState') != 'Running'
+            or prior.get('azureMutationPerformed') is not False or prior.get('deploySubmitted') is not False):
+        raise RuntimeError('Not the exact retained pending read-only Deploy observation')
+
+
+def main(wait_seconds,follow_up=False):
+    paths = ['scripts/observe-smal-existing-deploy.py','scripts/deploy-smal-three-node-cluster.py',D['TEMPLATES']['deploy'],ORIGINAL]
+    first_observation = 'docs/deployment-2026-10-29/three-node-cluster-deploy-observation-20261030.json'
+    if follow_up: paths.append(first_observation)
+    head = D['A']['source_guard'](paths)
     original = (ROOT / ORIGINAL).read_bytes(); prior = json.loads(original); template_hash = verify_original(prior)
-    path = D['OUT'] / 'three-node-cluster-deploy-observation-20261030.json'
+    filename = 'three-node-cluster-deploy-observation-follow-up-20261030.json' if follow_up else 'three-node-cluster-deploy-observation-20261030.json'
+    path = D['OUT'] / filename
     record = {'beganAtUtc':datetime.now(timezone.utc).isoformat(),'sourceCommit':head,'stage':'deploy','deploymentName':ACTION,
               'status':'observing-existing-deploy','templateSha256':template_hash,'originalTimeoutRetained':True,
               'originalTimeoutReceiptSha256':hashlib.sha256(original).hexdigest(),'azureMutationPerformed':False,
               'validateSubmitted':False,'deploySubmitted':False,'platformReadinessVerified':False}
+    if follow_up:
+        first_bytes = (ROOT / first_observation).read_bytes()
+        verify_follow_up(json.loads(first_bytes),template_hash)
+        record['priorObservationRetained'] = True
+        record['priorObservationSha256'] = hashlib.sha256(first_bytes).hexdigest()
     with path.open('x') as stream: stream.write(json.dumps(record,indent=2) + '\n')
     def save(): path.write_text(json.dumps(record,indent=2) + '\n')
     try:
@@ -71,6 +88,7 @@ def main(wait_seconds):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('--wait-seconds',type=int,default=7200); args = parser.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument('--wait-seconds',type=int,default=7200)
+    parser.add_argument('--follow-up',action='store_true'); args = parser.parse_args()
     if not 60 <= args.wait_seconds <= 7200: parser.error('wait bound must be 60–7200 seconds')
-    raise SystemExit(main(args.wait_seconds))
+    raise SystemExit(main(args.wait_seconds,args.follow_up))

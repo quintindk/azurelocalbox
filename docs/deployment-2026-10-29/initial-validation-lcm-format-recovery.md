@@ -352,6 +352,18 @@ timeout receipt and writing a separate observation. No repair, restart or resour
 mutation is performed. Full readiness remains false pending service completion
 and independent post-deployment checks.
 
+At **14:24 SAST**, the read-only observer reached its bound with ARM still Running
+and cluster DeploymentInProgress. The service had advanced through Arc infrastructure
+deployment, DNS verification, deployment-orchestrator migration and update-extension
+registration. **Finalize security** was InProgress, with final encryption and cleanup
+pending. No reported step exceptions were present. This is progress, not terminal
+success or independent acceptance.
+
+The original accepted-request timeout and this observation remain unchanged.
+`--follow-up` permits one separate bounded read-only observation of the exact same
+deployment, bound to the committed prior observation hash and unchanged template.
+It cannot invoke Validate/Deploy, modify infrastructure or overwrite prior receipts.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

@@ -11,6 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_deploy_follow_up_preserves_exact_pending_observation_and_never_replays(self):
+        h = runpy.run_path(str(ROOT / 'scripts/observe-smal-existing-deploy.py'),run_name='deploy_follow_up_test')
+        prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-deploy-observation-20261030.json').read_text())
+        h['verify_follow_up'](prior,prior['templateSha256'])
+        for field,value in [('deploymentState','Failed'),('deploySubmitted',True),('azureMutationPerformed',True),('deploymentId','other'),('stage','validate')]:
+            bad = copy.deepcopy(prior); bad[field] = value
+            with self.assertRaises(RuntimeError): h['verify_follow_up'](bad,prior['templateSha256'])
+        with self.assertRaises(RuntimeError): h['verify_follow_up'](prior,'changed-template')
+
     def test_existing_deploy_observer_requires_exact_retained_request_and_cannot_submit(self):
         h = runpy.run_path(str(ROOT / 'scripts/observe-smal-existing-deploy.py'),run_name='deploy_observer_test')
         prior = json.loads((ROOT / h['ORIGINAL']).read_text())
