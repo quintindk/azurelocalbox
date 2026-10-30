@@ -272,6 +272,19 @@ retains the original observer timeout and writes a separate success receipt only
 after current ARM, cluster, service, domain, storage and private-path checks pass.
 It cannot invoke Validate/Deploy, modify domain membership or repair resources.
 
+At **10:08 SAST on 30 October**, the read-only success reconciliation completed.
+Current ARM, cluster and reported service success were independently verified.
+All three nodes are members of the exact approved AD domain, bootstrap Succeeded,
+and the exact twelve approved data devices remain RAW with no S2D pool. Private
+DNS/TLS, Defender/firewalls, OU and normal LCM account expiry checks passed.
+Evidence: `three-node-cluster-validation-success-reconciliation-20261030.json`.
+
+The reconciled success receipt must be committed with the reviewed source before
+Deploy. Deploy will permit only **Modify** of the existing deploymentSettings
+resource, never creation of another settings resource or reapplication of the
+cluster, roles, secrets, storage or shared networking. Full platform readiness
+remains false until service Deploy and independent post-deployment acceptance pass.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

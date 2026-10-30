@@ -39,6 +39,8 @@ def source_guard():
              'scripts/seal-smal-platform-credentials.ps1', 'scripts/inspect-smal-three-node-live.ps1', 'scripts/smal-private-powershell.py',
              'docs/deployment-2026-10-29/three-node-local-identity-bindings.json', 'docs/deployment-2026-10-29/three-node-arc-verified.json']
     paths.append('docs/deployment-2026-10-29/cluster-name-correction-approval.json')
+    validation_success = 'docs/deployment-2026-10-29/three-node-cluster-validation-success-reconciliation-20261030.json'
+    if (ROOT / validation_success).exists(): paths.append(validation_success)
     head = A['source_guard'](paths)
     derived = runpy.run_path(str(ROOT / 'scripts/derive-smal-three-node-cluster.py'), run_name='three_node_cluster_derive_check')['build']()
     for name, value in derived.items():
@@ -112,7 +114,7 @@ def check_preview(stage,data,owned,principal=None):
             after = row.get('after',{}); properties = after.get('properties',{})
             if kind != 'Create' or not rid.startswith(VAULT.lower() + '/providers/microsoft.authorization/roleassignments/') or after.get('type','').lower() != 'microsoft.authorization/roleassignments' or properties.get('principalId') != principal or properties.get('principalType') not in [None,'ServicePrincipal'] or properties.get('scope',VAULT).lower() != VAULT.lower() or properties.get('roleDefinitionId','').lower() != '/subscriptions/' + SUB + '/providers/microsoft.authorization/roledefinitions/4633458b-17de-408a-b874-0445c86b69e6':
                 raise RuntimeError('Unlisted cluster identity/vault-only role effect')
-        elif rid not in effects(stage) or kind not in (['Create','Modify'] if stage == 'deploy' else ['Create']): raise RuntimeError('Unlisted resource effect in No Witness stage: ' + stage)
+        elif rid not in effects(stage) or kind not in (['Modify'] if stage == 'deploy' else ['Create']): raise RuntimeError('Unlisted resource effect in No Witness stage: ' + stage)
         if rid in seen: raise RuntimeError('Duplicate preview effect')
         seen.add(rid); result.append({'id':row['resourceId'],'changeType':kind})
     if (stage == 'cluster-role' and len(seen) != 1) or (stage != 'cluster-role' and seen != effects(stage)): raise RuntimeError('Expected bounded No Witness effects missing')

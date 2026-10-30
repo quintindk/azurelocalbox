@@ -11,6 +11,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_reconciled_validation_success_and_current_domain_storage_proof_are_positive(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='positive_validation_receipt_test')
+        receipt = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-validation-success-reconciliation-20261030.json').read_text())
+        self.assertEqual(receipt['status'],'complete')
+        self.assertEqual(receipt['clusterStatus'],'ValidationSuccess')
+        self.assertTrue(h['service_passed'](receipt['serviceResult']))
+        self.assertFalse(receipt['azureMutationPerformed'])
+        self.assertFalse(receipt['deploySubmitted'])
+        self.assertTrue(receipt['originalObserverTimeoutRetained'])
+        proof = json.loads((ROOT / receipt['privateInputsReceipt']).read_text())
+        h['P']['verify_local'](proof,require_ad=True,validated_ad_members=True)
+        with self.assertRaises(RuntimeError):
+            h['check_preview']('deploy',{'status':'Succeeded','changes':[{'resourceId':h['SETTINGS'],'changeType':'Create'}]},set())
+
     def test_only_exact_inapplicable_local_identity_validation_may_be_skipped_for_ad(self):
         h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='ad_skip_gate_test')
         prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-validate-gateway-after-auth-reconciliation-receipt.json').read_text())
@@ -214,7 +228,7 @@ class ThreeNodeDeploymentTests(unittest.TestCase):
         self.assertLessEqual(len(h['NAME']),15)
         self.assertEqual(len(h['effects']('prerequisites')),4)
         for stage in ['secrets','prerequisites','validate','deploy']:
-            rows = [{'resourceId':rid,'changeType':'Create','after':{'properties':{'value':'SYNTHETIC-SECRET'}}} for rid in h['effects'](stage)]
+            rows = [{'resourceId':rid,'changeType':'Modify' if stage == 'deploy' else 'Create','after':{'properties':{'value':'SYNTHETIC-SECRET'}}} for rid in h['effects'](stage)]
             good = {'status':'Succeeded','changes':rows}
             safe = h['check_preview'](stage,good,set())
             self.assertNotIn('SYNTHETIC-SECRET',json.dumps(safe))

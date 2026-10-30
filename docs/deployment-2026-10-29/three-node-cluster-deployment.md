@@ -109,6 +109,11 @@ the service requires an unqualified LCM username, while our encoder supplied a
 domain-qualified one. No Deploy was submitted. See the
 [exact diagnosis, one-secret correction and guarded initial-validation retry](initial-validation-lcm-format-recovery.md).
 No Deploy is submitted unless current reported validation and all steps positively pass.
+The gateway-echo correction subsequently produced positive service validation on
+30 October. The original observer timeout is retained and a separate read-only
+success reconciliation records **ValidationSuccess**, with only the inapplicable
+alternative Local Identity validation skipped for this AD-backed system. See the
+linked recovery record for the exact gate and post-validation domain membership.
 Final read-only Windows/storage and cloud-observation scripts are prepared without
 credential resets, service restarts, storage repairs or kubeconfig/secret export.
 
