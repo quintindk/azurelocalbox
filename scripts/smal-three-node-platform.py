@@ -29,7 +29,7 @@ def cloud_nodes():
     return az(['connectedmachine', 'list', '-g', RG, '--query', '[].{id:id,name:name,status:status,provisioningState:provisioningState,location:location,identity:identity,agentVersion:agentVersion,osVersion:osVersion}'])
 
 
-def verify_local(proof, require_ad=False):
+def verify_local(proof, require_ad=False, validated_ad_members=False):
     if proof.get('status') != 'complete': raise RuntimeError('Complete three-node private inspection required')
     data = proof['result']; rows = data.get('nodes', [])
     bound = json.loads((OUT / 'three-node-local-identity-bindings.json').read_text())['nodes']
@@ -37,8 +37,11 @@ def verify_local(proof, require_ad=False):
         raise RuntimeError('Exact current node/guest set differs')
     for row in rows:
         name = row['name']; guest = row['guest']; binding = bound[name]
-        if row['state'] != 'Running' or row['memoryBytes'] != 64 * 1024**3 or row['processors'] != 8 or guest['name'] != name or guest['build'] != '26100.33650' or guest['domainRole'] != 2 or guest['bootstrapStatus'] != 'Succeeded' or guest['nonPrimordialPoolCount'] != 0 or guest['defenderEnabled'] is not True or guest['firewallEnabled'] is not True:
-            raise RuntimeError('Current standalone node/bootstrap/protection differs')
+        expected_role = 3 if validated_ad_members else 2
+        if row['state'] != 'Running' or row['memoryBytes'] != 64 * 1024**3 or row['processors'] != 8 or guest['name'] != name or guest['build'] != '26100.33650' or guest['domainRole'] != expected_role or guest['bootstrapStatus'] != 'Succeeded' or guest['nonPrimordialPoolCount'] != 0 or guest['defenderEnabled'] is not True or guest['firewallEnabled'] is not True:
+            raise RuntimeError('Expected node domain role/bootstrap/protection differs')
+        if validated_ad_members and (guest.get('domain') != 'ad.localbox.test' or guest.get('partOfDomain') is not True):
+            raise RuntimeError('Validated node must be a member of the exact approved AD domain')
         host_macs = {adapter['Name']: adapter['MacAddress'].replace('-', '').upper() for adapter in row['hostAdapters']}
         guest_macs = {adapter['Name']: adapter['MacAddress'].replace('-', '').upper() for adapter in guest['adapters']}
         if host_macs != binding['liveMacs'] or host_macs != guest_macs or any(adapter['Status'] != 'Up' for adapter in guest['adapters']): raise RuntimeError('Live approved NIC identity/status differs')

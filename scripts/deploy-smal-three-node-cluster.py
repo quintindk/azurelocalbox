@@ -66,12 +66,12 @@ def preflight():
     if vault['id'].lower() != VAULT.lower() or vault['pna'] != 'Disabled' or vault['rbac'] is not True: raise RuntimeError('Expected private RBAC vault differs')
 
 
-def inspect_inputs(stage):
+def inspect_inputs(stage,validated_ad_members=False):
     name = 'three-cluster-inputs-' + stage + '-20261029'
     with contextlib.redirect_stdout(io.StringIO()): code = T['main']('scripts/inspect-smal-three-node-live.ps1',name)
     path = T['OUT'] / ('private-ssh-' + name + '.json'); proof = json.loads(path.read_text())
     if code != 0: raise RuntimeError('Private current three-node input inspection failed')
-    P['verify_local'](proof,require_ad=True)
+    P['verify_local'](proof,require_ad=True,validated_ad_members=(stage == 'deploy' or validated_ad_members))
     print(json.dumps({'privateInspection':'passed','receipt':str(path.relative_to(ROOT))}),flush=True)
     return str(path.relative_to(ROOT))
 
@@ -88,6 +88,8 @@ def previous(stage):
     if stage == 'validate' and gateway_retry.exists(): path = gateway_retry
     gateway_reconciled = OUT / 'three-node-cluster-validate-gateway-after-auth-reconciliation-receipt.json'
     if stage == 'validate' and gateway_retry.exists() and gateway_reconciled.exists(): path = gateway_reconciled
+    validation_success = OUT / 'three-node-cluster-validation-success-reconciliation-20261030.json'
+    if stage == 'validate' and gateway_reconciled.exists() and validation_success.exists(): path = validation_success
     result = json.loads(path.read_text())
     if result.get('status') != 'complete' or result.get('deploymentState') != 'Succeeded': raise RuntimeError('Earlier three-node stage incomplete: ' + stage)
     return result
@@ -129,13 +131,33 @@ def service_result(stage):
     if actual['id'].lower() != SETTINGS.lower() or props.get('deploymentMode') != expected_mode or {rid.lower() for rid in props.get('arcNodeResourceIds',[])} != expected_ids: raise RuntimeError('Service mode/node resource binding differs')
     reported = props.get('reportedProperties') or {}
     key = 'validationStatus' if stage == 'validate' else 'deploymentStatus'
-    return {'provisioningState':props.get('provisioningState'), 'mode':props.get('deploymentMode'), 'action':safe_action(reported.get(key) or {})}
+    units = (props.get('deploymentConfiguration') or {}).get('scaleUnits') or []
+    data = units[0].get('deploymentData',{}) if len(units) == 1 else {}
+    ad_verified = (data.get('domainFqdn') == 'ad.localbox.test'
+                   and data.get('adouPath') == 'OU=SMAL01,OU=AzureLocal,DC=ad,DC=localbox,DC=test')
+    return {'provisioningState':props.get('provisioningState'), 'mode':props.get('deploymentMode'),
+            'adConfigurationVerified':ad_verified,'action':safe_action(reported.get(key) or {})}
 
 
 def service_passed(result):
-    def good_steps(steps):
-        return all(str(step.get('status','')).lower() in ['success','succeeded'] and step.get('exceptionCount',0) == 0 and good_steps(step.get('children',[])) for step in steps)
-    return result.get('provisioningState') == 'Succeeded' and str(result.get('action',{}).get('status','')).lower() in ['success','succeeded'] and good_steps(result['action'].get('steps',[]))
+    steps = result.get('action',{}).get('steps',[])
+    # Local Identity with Key Vault is an alternative to AD, not this deployment's
+    # identity model. Permit only its exact inapplicable validation leaf. Never
+    # accept arbitrary skipped checks or a skipped Deploy step.
+    ad_passed = any(step.get('name') == 'Azure Local External Active Directory' and step.get('index') == '20'
+                    and str(step.get('status','')).lower() in ['success','succeeded'] and step.get('exceptionCount',0) == 0 for step in steps)
+    allow_identity_skip = result.get('mode') == 'Validate' and result.get('adConfigurationVerified') is True and ad_passed
+    def good_steps(items,top=False):
+        for step in items:
+            if step.get('exceptionCount',0) != 0: return False
+            status = str(step.get('status','')).lower()
+            if status not in ['success','succeeded']:
+                if not (top and allow_identity_skip and status == 'skipped' and step.get('name') == 'Azure Local Local Identity Validation'
+                        and step.get('index') == '120' and not step.get('children')): return False
+            if not good_steps(step.get('children',[])): return False
+        return True
+    return (result.get('provisioningState') == 'Succeeded' and str(result.get('action',{}).get('status','')).lower() in ['success','succeeded']
+            and bool(steps) and good_steps(steps,top=True))
 
 
 def normalise_lcm_parameters(parameters):

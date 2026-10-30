@@ -25,7 +25,8 @@ $nodes = @(foreach ($target in $targets) {
             $cmd = Get-Command Invoke-AzStackHciArcInitialization -ErrorAction SilentlyContinue
             $bootstrap = $null; $bootstrapError = $null
             try { $bootstrap = [string](Get-ArcBootstrapStatus).Response.Status } catch { $bootstrapError = $_.Exception.GetType().Name }
-            @{ name = $env:COMPUTERNAME; build = ($os.CurrentBuild + '.' + $os.UBR); domainRole = (Get-CimInstance Win32_ComputerSystem).DomainRole;
+            $computer = Get-CimInstance Win32_ComputerSystem
+            @{ name = $env:COMPUTERNAME; build = ($os.CurrentBuild + '.' + $os.UBR); domainRole = $computer.DomainRole; domain = $computer.Domain; partOfDomain = $computer.PartOfDomain;
                adapters = @(Get-NetAdapter | Select-Object Name,MacAddress,Status); ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,IPAddress,PrefixLength);
                disks = @(Get-Disk | ForEach-Object { @{ uniqueId = $_.UniqueId; size = $_.Size; style = $_.PartitionStyle.ToString(); isBoot = $_.IsBoot; isSystem = $_.IsSystem } });
                nonPrimordialPoolCount = @(Get-StoragePool | Where-Object IsPrimordial -EQ $false).Count;

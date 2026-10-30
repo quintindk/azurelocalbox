@@ -237,6 +237,41 @@ receipts. Evidence: `gateway-validation-access-restored-20261030.json` and the
 daily startup/health observations. Deploy remains gated on a positive reported
 validation result, matching settings hash and current service state.
 
+## Positive service validation and strict observer reconciliation
+
+The original gateway-retry request now reports ARM **Succeeded**, settings
+**Succeeded / Validate**, service validation **Success**, and cluster
+**ValidationSuccess**. All applicable reported checks, including infrastructure
+networking, storage networking and storage validation, report Success with zero
+exceptions. Deploy has not yet started.
+
+The observer retained a timeout at **10:01 SAST on 30 October** because its original
+predicate required every step to report Success. The service marked exactly one
+leaf **Skipped**: **Azure Local Local Identity Validation**, index **120**.
+This system uses **ad.localbox.test** and its approved OU, not the alternative
+Local Identity with Key Vault deployment model. The External Active Directory
+validation reports Success. Microsoft documents Local Identity as an alternative
+to relying on AD for authentication:
+[Deploy Azure Local using local identity with Azure Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610).
+
+The revised predicate is narrow: permit only that exact skipped top-level leaf,
+only in Validate mode, with the exact live approved AD domain/OU and successful
+External AD validation. Every other skipped, failed, pending, exception-bearing or
+empty action remains blocked. No generic skipped-check allowance is introduced.
+
+The successful service validation also performed its reported **Add hosts to domain
+and create cluster object** action. Fresh inspection shows all three nodes are now
+member servers (domainRole 3), not their historical standalone role 2. Pre-Deploy
+checks therefore require explicit membership in **ad.localbox.test**. Earlier
+bootstrap/recovery gates still require standalone nodes. All twelve approved data
+devices must still be RAW with exact VHD/guest identities and no S2D pool.
+
+`scripts/reconcile-smal-gateway-validation-success.py` performs only read-only
+reconciliation against the same deployment/cluster identity and settings hash. It
+retains the original observer timeout and writes a separate success receipt only
+after current ARM, cluster, service, domain, storage and private-path checks pass.
+It cannot invoke Validate/Deploy, modify domain membership or repair resources.
+
 References:
 
 - [Azure Local portal: validation and deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610#validate-and-deploy-the-system).

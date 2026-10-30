@@ -11,6 +11,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThreeNodeDeploymentTests(unittest.TestCase):
+    def test_only_exact_inapplicable_local_identity_validation_may_be_skipped_for_ad(self):
+        h = runpy.run_path(str(ROOT / 'scripts/deploy-smal-three-node-cluster.py'),run_name='ad_skip_gate_test')
+        prior = json.loads((ROOT / 'docs/deployment-2026-10-29/three-node-cluster-validate-gateway-after-auth-reconciliation-receipt.json').read_text())
+        result = copy.deepcopy(prior['serviceResult'])
+        self.assertFalse(h['service_passed'](result))
+        result['adConfigurationVerified'] = True
+        self.assertTrue(h['service_passed'](result))
+        for field,value in [('mode','Deploy'),('adConfigurationVerified',False),('provisioningState','Failed')]:
+            bad = copy.deepcopy(result); bad[field] = value
+            self.assertFalse(h['service_passed'](bad))
+        for field,value in [('index','121'),('name','Azure Local Storage Validation'),('exceptionCount',1),('children',[{'status':'Success'}])]:
+            bad = copy.deepcopy(result); skipped = next(step for step in bad['action']['steps'] if step['status'] == 'Skipped'); skipped[field] = value
+            self.assertFalse(h['service_passed'](bad))
+        bad = copy.deepcopy(result); bad['action']['steps'][0]['status'] = 'Skipped'
+        self.assertFalse(h['service_passed'](bad))
+        bad = copy.deepcopy(result); bad['action']['steps'] = []
+        self.assertFalse(h['service_passed'](bad))
+
+    def test_postvalidation_predeploy_checks_require_exact_ad_membership_not_standalone(self):
+        h = self.helpers()
+        proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-three-node-live-after-arc-20261029.json').read_text())
+        for node in proof['result']['nodes']:
+            node['guest'].update(domainRole=3,domain='ad.localbox.test',partOfDomain=True)
+        h['verify_local'](proof,validated_ad_members=True)
+        with self.assertRaises(RuntimeError): h['verify_local'](proof)
+        for field,value in [('domainRole',2),('domain','other.test'),('partOfDomain',False)]:
+            bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest'][field] = value
+            with self.assertRaises(RuntimeError): h['verify_local'](bad,validated_ad_members=True)
+
     def test_gateway_auth_resumption_refuses_any_possible_prior_submission_or_changed_settings(self):
         h = runpy.run_path(str(ROOT / 'scripts/retry-smal-initial-validation.py'),run_name='gateway_auth_resume_test')
         out = ROOT / 'docs/deployment-2026-10-29'
