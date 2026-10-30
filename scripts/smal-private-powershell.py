@@ -156,7 +156,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
     if not remote or remote[0] != head:
         raise RuntimeError('Exact command source must be pushed')
-    capacity_scripts = {'scripts/prepare-smal-capacity-expansion.ps1','scripts/format-smal-capacity-disk.ps1','scripts/add-smal-capacity-vhds.ps1'}
+    capacity_scripts = {'scripts/prepare-smal-capacity-expansion.ps1','scripts/format-smal-capacity-disk.ps1','scripts/add-smal-capacity-vhds.ps1','scripts/inspect-smal-capacity-interruption.ps1'}
     if relative in capacity_scripts:
         guard = runpy.run_path(str(ROOT / 'scripts/smal-capacity-expansion.py'),run_name='capacity_transport_guard')
         guard['source_guard']()
@@ -413,6 +413,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/prepare-smal-capacity-expansion.ps1': 300,
                      'scripts/format-smal-capacity-disk.ps1': 300,
                      'scripts/add-smal-capacity-vhds.ps1': 600,
+                     'scripts/inspect-smal-capacity-interruption.ps1': 300,
                      'scripts/inspect-smal-infra-network-failure.ps1': 240,
                      'scripts/stop-smal-guests-for-premium.ps1': 240,
                      'scripts/format-smal-node03-disk.ps1': 240,

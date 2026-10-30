@@ -85,6 +85,27 @@ early observation does not prove that automatic optimization has finished.
 The pre-existing boot-encryption and recovery/audit-delivery gaps remain separate
 and are not silently waived by this capacity operation.
 
+## Applied stages and retained interruption
+
+The exact pre-attachment baseline passed, including all three nodes Up, healthy
+idle 12-device pool, original VHD IDs and 64-disk Azure VM SKU limit. The approved
+4 TiB disk was created, attached at LUN 9, and only its admitted RAW device was
+formatted as X:. Its immutable Azure unique ID is
+**db6882f9-8c4a-4923-b1a3-6b73dbbb9109**. Existing managed-disk sizes/SKUs,
+attachments, outer pool and C:/V:/W: identities were preserved. No shutdown was needed.
+
+The VHD stage stopped at its first new file while converting DiskIdentifier to
+guest unique-ID bytes. The runtime returned the identifier as a string, while the
+code called ToByteArray without first parsing a Guid. The original journal records
+zero bound/attached new VHDs and the one pending first-file path. No guest attachment
+command had been reached. The failure receipt/host marker are retained.
+
+Before a corrected continuation, the dedicated read-only interruption inspector
+must prove exactly one small, dynamic, unattached owned new VHD with the intended
+size/geometry, the unchanged original five attachments per node, and the original
+healthy 12-device S2D pool. Its returned GUID and file hash must be retained. No
+file or failure marker may be deleted or blindly recreated.
+
 ## References
 
 - [S2D in a guest cluster: unsupported host-level size changes and adding capacity](https://learn.microsoft.com/en-us/windows-server/storage/storage-spaces/storage-spaces-direct-in-vm).

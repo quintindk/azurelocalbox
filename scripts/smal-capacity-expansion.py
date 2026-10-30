@@ -39,7 +39,7 @@ def load_plan():
 
 def source_guard():
     paths = [PLAN_PATH,APPROVAL_PATH,TEMPLATE,'scripts/smal-capacity-expansion.py','scripts/plan-smal-capacity-expansion.py',
-             'scripts/smal-capacity-prelude.ps1','scripts/smal-private-powershell.py','scripts/inspect-smal-three-node-final.ps1',*SCRIPTS.values()]
+             'scripts/smal-capacity-prelude.ps1','scripts/smal-private-powershell.py','scripts/inspect-smal-three-node-final.ps1','scripts/inspect-smal-capacity-interruption.ps1',*SCRIPTS.values()]
     head = D['A']['source_guard'](paths); load_plan(); return head
 
 

@@ -57,7 +57,7 @@ class CapacityExpansionTests(unittest.TestCase):
 
     def test_expansion_scripts_parse_after_public_prelude_rendering(self):
         prelude = (ROOT / 'scripts/smal-capacity-prelude.ps1').read_text()
-        for path in self.h['SCRIPTS'].values():
+        for path in [*self.h['SCRIPTS'].values(),'scripts/inspect-smal-capacity-interruption.ps1']:
             source = (ROOT / path).read_text().replace('__CAPACITY_PRELUDE__',prelude)
             # Parser only. Neither the prelude nor any operation is executed.
             command = '$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$t,[ref]$e);if($e.Count){$e|ForEach-Object Message;exit 1}'
@@ -75,6 +75,14 @@ class CapacityExpansionTests(unittest.TestCase):
         add = (ROOT / self.h['SCRIPTS']['add-vhds']).read_text()
         self.assertIn('New-VHD -Path $spec.path -Dynamic -SizeBytes 170GB',add)
         self.assertIn('Add-VMHardDiskDrive -VM $vm',add)
+
+    def test_interruption_inspector_cannot_create_attach_delete_or_reformat(self):
+        source = (ROOT / 'scripts/inspect-smal-capacity-interruption.ps1').read_text()
+        for forbidden in ['New-VHD','Add-VMHardDiskDrive','Remove-Item','Format-Volume','Initialize-Disk']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn('$files.Count -ne 1',source)
+        self.assertIn('$vhd.Attached',source)
+        self.assertIn('Get-FileHash $first',source)
 
     def growth_fixture(self):
         proof = json.loads((ROOT / 'docs/deployment-2026-10-27/private-ssh-final-cluster-storage-postdeploy-identity-20261030.json').read_text())
