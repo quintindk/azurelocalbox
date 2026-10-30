@@ -1,5 +1,38 @@
 # Start LocalBox after the nightly shutdown
 
+## Current operational handover
+
+The cluster is deployed. Current storage is **24 S2D data VHDXs**, eight per node,
+with **8 TiB Azure data backing**, and Standard_LRS is the approved lab tier. Older
+three-guest, standalone, 12-device and ValidationFailed observations below are
+historical, not the current operating baseline.
+
+Other agents on this operator machine should reference this canonical checkout,
+not copy the Python script into another repository. Its repository-relative
+dependencies, exact approval/receipt bindings, pinned host-key setup and pushed
+HEAD checks must remain intact. The command can be called by absolute path:
+
+```bash
+python3 -B /home/quintin/play/azurelocalbox/scripts/start-smal-localbox.py
+```
+
+When AzureLocalBox is unavailable, inspect whether the existing host/guests are
+stopped after the normal shutdown and use this command for startup-only recovery.
+Do not interfere with an intentional maintenance window or an active deployment.
+If the host and four guests are already Running with healthy heartbeats, investigate
+application/network/Arc health rather than redeploying or restarting the cluster.
+
+Incorporate the canonical command and these prerequisites/failure boundaries into
+the consuming project's runbook. Do not copy credentials, private keys or Azure
+token caches, provision replacement infrastructure, activate PIM automatically,
+change nightly shutdown automation or install recurring startup jobs.
+
+Startup success proves host/guest power and heartbeat, not application or full
+platform readiness. Boot encryption and audit-delivery/recovery acceptance remain
+open. Current technical evidence is in
+[independent acceptance](../deployment-2026-10-30/independent-acceptance.md) and
+[capacity expansion](../deployment-2026-10-30/capacity-expansion.md).
+
 From `/home/quintin/play/azurelocalbox`:
 
 ```bash
@@ -49,7 +82,9 @@ Failures, interruptions and uncertain timeouts are retained. The command does no
 automatically replay remote operations. If it fails, inspect the named receipts
 and actual VM state before running it again. Concurrent local invocations are refused.
 
-For NODE2 bootstrap recovery, startup is followed by **inspection**, not registration:
+Historical pre-deployment NODE2 bootstrap recovery reference only. This is **not**
+part of daily startup or recovery of the now-deployed cluster. The historical
+command performed inspection, not registration:
 
 ```bash
 python3 -B scripts/register-smal-node-console.py --node LB-NODE02 --inspect
@@ -124,8 +159,9 @@ bootstrap endpoint read error cleared on follow-up without service changes.
 
 Evidence: `../deployment-2026-10-29/daily-health-verified-20261030.json` and its
 fingerprinted source receipts. The failed pre-start VPN receipt remains intact.
-The cluster still reports the previous ValidationFailed state. Health checks did
-not resubmit Validate/Deploy or retest deployment write permission.
+At that morning observation the cluster still reported the previous ValidationFailed
+state. Those health checks did not resubmit Validate/Deploy or retest deployment
+write permission. Deployment succeeded later that day, as recorded above.
 
 Verification: **239 regression tests passed**, including disconnected-profile,
 stale-active-profile, missing-profile, bounded failure and healthy-path VPN cases.
