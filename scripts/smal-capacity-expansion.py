@@ -144,6 +144,11 @@ def verify_growth(plan,baseline,added,proof):
         if guest.get('clusterName') != 'smal-localbox01' or guest.get('storageSpacesDirectState') != 'Enabled' or guest.get('domain') != 'ad.localbox.test' or guest.get('domainRole') != 3 or row.get('state') != 'Running': raise RuntimeError('Cluster/S2D/domain identity differs after addition')
         if {r['name']:r['state'] for r in guest.get('clusterNodes',[])} != {name:'Up' for name in plan['nodes']} or len(guest.get('clusterNodes',[])) != 3: raise RuntimeError('All three exact nodes must remain Up')
         if guest.get('quorumResourceName') is not None or guest.get('quorumType') != 'Majority': raise RuntimeError('No Witness quorum changed')
+        if guest.get('defenderEnabled') is not True or guest.get('firewallEnabled') is not True: raise RuntimeError('Guest protections changed')
+        os_expected = [d for d in plan['nodes'][row['name']]['originalDisks'] if not d['eligibleForS2D']]
+        boot = [d for d in guest.get('localDisks',[]) if d.get('isBoot') or d.get('isSystem')]
+        if len(boot) != 1 or len(os_expected) != 1 or boot[0]['uniqueId'] != os_expected[0]['guestUniqueId'] or boot[0]['size'] != os_expected[0]['sizeBytes']:
+            raise RuntimeError('Existing guest OS disk identity/size changed')
         if len(pools) != 1 or pools[0]['uniqueId'].lower() != plan['expectedS2dPoolId'].lower() or pools[0]['health'] != 'Healthy' or pools[0]['operationalStatus'] != ['OK']: raise RuntimeError('Original pool identity/health changed')
         pool = pools[0]
         if len(pool['members']) != 24 or {r['uniqueId']:r['size'] for r in pool['members']} != expected or any(r['health'] != 'Healthy' for r in pool['members']): raise RuntimeError('Exact twenty-four approved healthy pool members not yet observed; no automatic repair')
@@ -155,8 +160,25 @@ def verify_growth(plan,baseline,added,proof):
         jobs.extend(guest.get('storageJobs',[])); sizes.append(pool['size'])
     if len(set(sizes)) != 1: raise RuntimeError('Nodes disagree on pool capacity')
     return {'oldMembersPreserved':12,'newMembersVerified':12,'totalMembers':24,'poolSizeGiB':round(sizes[0]/1024**3,2),
-            'poolIdentityPreserved':True,'existingVirtualDiskSizesAndIdsPreserved':True,'activeStorageJobs':jobs,
+            'poolIdentityPreserved':True,'existingVirtualDiskSizesAndIdsPreserved':True,'activeStorageJobs':[r for r in jobs if r.get('state') != 'Completed'],
+            'completedJobRecordsObserved':sum(r.get('state') == 'Completed' for r in jobs),
             'optimizationFullyCompletedProven':False,'platformReadinessVerified':False}
+
+
+def verify_outer_volumes(proof,baseline,formatted,plan):
+    data = proof['result']; volumes = data.get('volumes',[])
+    if len(volumes) != 4 or {v['letter'] for v in volumes} != {'C','V','W','X'} or any(v['health'] != 'Healthy' for v in volumes):
+        raise RuntimeError('Exact four healthy outer volumes not observed')
+    actual = {v['letter']:v for v in volumes}
+    for old in baseline['volumes']:
+        now = actual[old['letter']]
+        if now['uniqueId'] != old['uniqueId'] or now['size'] != old['size']: raise RuntimeError('Original outer volume identity/size changed')
+    if actual['X']['uniqueId'] != formatted['volumeId'] or actual['X']['size'] != formatted['volumeSize'] or actual['X']['free'] < 200*1024**3:
+        raise RuntimeError('Exact new X identity/size/free-space reserve differs')
+    pools = data.get('outerPool',[])
+    if len(pools) != 1 or pools[0]['uniqueId'] != plan['originalOuterPoolId'] or pools[0]['memberCount'] != 8 or pools[0]['health'] != 'Healthy':
+        raise RuntimeError('Original eight-member outer pool changed')
+    return {'originalCvwPreserved':True,'newXHealthyAndIdentityVerified':True,'newXFreeGiB':round(actual['X']['free']/1024**3,2),'outerPoolPreserved':True}
 
 
 def verify_first_file_resume(failed,admission,plan):

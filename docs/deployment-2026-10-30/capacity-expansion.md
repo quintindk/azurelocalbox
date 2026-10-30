@@ -120,6 +120,25 @@ marker stay intact. Other existing files or any prior guest attachment block thi
 specific recovery. Unit tests execute the string-Guid conversion with PowerShell
 and compare it with the independently derived guest unique ID.
 
+## Attachment completed; independent reads must converge
+
+The guarded continuation completed all twelve attachments, four per node, preserving
+the first admitted file's original GUID. All original VHD paths/GUIDs/sizes and
+the final nine-disk running topology per node were independently checked.
+
+The first sequential post-addition read caught normal automatic pooling in progress:
+NODE1 reported 12 members, NODE2 21, and NODE3 24. All reported members were Healthy,
+and the final node already reported doubled pool capacity. This is not sufficient
+for acceptance because the three snapshots do not yet agree. The early failed
+verification receipt remains intact and no mutation is replayed.
+
+`scripts/observe-smal-capacity-growth.py` performs only read-only observations until
+all three nodes report the exact approved 24-member pool and doubled capacity,
+unchanged original virtual-disk IDs/sizes and Online CSVs. It separately verifies
+preserved C:/V:/W:, the exact new X: identity/reserve, 8 TiB Azure data backing and
+all eleven managed disks Standard_LRS. Completed AddPhysicalDisk records are not
+mislabelled as active jobs or proof of completed automatic optimization.
+
 ## References
 
 - [S2D in a guest cluster: unsupported host-level size changes and adding capacity](https://learn.microsoft.com/en-us/windows-server/storage/storage-spaces/storage-spaces-direct-in-vm).

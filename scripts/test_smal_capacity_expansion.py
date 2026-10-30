@@ -127,5 +127,21 @@ class CapacityExpansionTests(unittest.TestCase):
         bad = copy.deepcopy(proof); bad['result']['nodes'][0]['guest']['virtualDisks'][0]['size'] *= 2
         with self.assertRaises(RuntimeError): self.h['verify_growth'](self.plan,baseline,added,bad)
 
+    def test_completed_addition_jobs_are_not_reported_as_active_or_optimization_proof(self):
+        baseline,added,proof = self.growth_fixture()
+        for node in proof['result']['nodes']:
+            node['guest']['storageJobs'] = [{'name':'AddPhysicalDisk','state':'Completed','percentComplete':100}]
+        result = self.h['verify_growth'](self.plan,baseline,added,proof)
+        self.assertEqual(result['activeStorageJobs'],[])
+        self.assertEqual(result['completedJobRecordsObserved'],3)
+        self.assertFalse(result['optimizationFullyCompletedProven'])
+
+    def test_capacity_convergence_observer_cannot_replay_addition_or_formatting(self):
+        source = (ROOT / 'scripts/observe-smal-capacity-growth.py').read_text()
+        for forbidden in ["'vm','disk','attach'","'deployment','group','create'",'New-VHD','Format-Volume','Initialize-Disk']:
+            self.assertNotIn(forbidden,source)
+        self.assertIn("'azureMutationPerformed':False",source)
+        self.assertIn("'newDiskOrVhdOperationRequested':False",source)
+
 
 if __name__ == '__main__': unittest.main()

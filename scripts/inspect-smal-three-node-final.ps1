@@ -54,7 +54,7 @@ $nodes = @(foreach ($target in $targets) {
 })
 $phase = 'outer-storage-inspection'
 @{ atUtc = [datetime]::UtcNow.ToString('o'); observationStatus = 'complete-read-only'; nodes = $nodes; outerPool = @(Get-StoragePool -FriendlyName LocalBoxPool | ForEach-Object { @{ uniqueId = $_.UniqueId; health = $_.HealthStatus.ToString(); memberCount = @($_ | Get-PhysicalDisk).Count } });
-   volumes = @(Get-Volume | Where-Object DriveLetter -In @('C','V','W') | ForEach-Object { @{ letter = [string]$_.DriveLetter; size = $_.Size; free = $_.SizeRemaining; health = $_.HealthStatus.ToString() } });
+   volumes = @(Get-Volume | Where-Object DriveLetter -In @('C','V','W','X') | ForEach-Object { @{ letter = [string]$_.DriveLetter; uniqueId = $_.UniqueId; size = $_.Size; free = $_.SizeRemaining; health = $_.HealthStatus.ToString() } });
    credentialsReset = $false; mutationPerformed = $false; platformReadinessVerified = $false } | ConvertTo-Json -Depth 14 -Compress
 } catch {
     # Never emit raw exception messages, command arguments or credential objects.
