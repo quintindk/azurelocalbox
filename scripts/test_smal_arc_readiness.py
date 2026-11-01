@@ -3,6 +3,8 @@ import copy
 import json
 from pathlib import Path
 import runpy
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,6 +18,31 @@ class ArcReadinessTests(unittest.TestCase):
         self.good = {'arcMachines': recorded['arcMachines'], 'bridge': recorded['bridgeResources'][0],
                      'customLocation': recorded['customLocationResources'][0]}
 
+
+    def test_account_query_pins_lab_subscription_without_changing_cli_default(self):
+        scope = self.h['arc_account'].__globals__
+        command = Mock(return_value={'id': self.h['SUB'], 'tenantId': self.h['P']['A']['H']['TENANT'], 'state': 'Enabled'})
+        with patch.dict(scope, az=command):
+            account = self.h['arc_account']()
+        self.assertEqual(account['id'], self.h['SUB'])
+        command.assert_called_once_with(['account', 'show', '--subscription', self.h['SUB'], '--query', '{id:id,tenantId:tenantId,state:state}'])
+
+    def test_provider_read_timeout_is_retained_without_retry_or_raw_auth_output(self):
+        scope = self.h['main_arc_readiness'].__globals__
+        deployment = dict(scope['D']); deployment['A'] = {'source_guard': Mock(return_value='reviewed-source')}
+        account = {'id': self.h['SUB'], 'tenantId': self.h['P']['A']['H']['TENANT'], 'state': 'Enabled'}
+        observe = Mock(side_effect=subprocess.TimeoutExpired('SYNTHETIC-PRIVATE-ARGUMENT', 120))
+        with tempfile.TemporaryDirectory() as folder, patch.dict(scope, ROOT=Path(folder), OUT=Path(folder), D=deployment,
+                arc_account=Mock(return_value=account), observe_arc=observe):
+            self.assertEqual(self.h['main_arc_readiness'](60), 2)
+            receipts = list(Path(folder).glob('arc-readiness-*.json'))
+            self.assertEqual(len(receipts), 1)
+            record = json.loads(receipts[0].read_text())
+            self.assertEqual(record['status'], 'arc-read-failed-no-repair')
+            self.assertEqual(record['errorType'], 'TimeoutExpired')
+            self.assertNotIn('SYNTHETIC-PRIVATE-ARGUMENT', receipts[0].read_text())
+            self.assertFalse(record['azureMutationPerformed'])
+        observe.assert_called_once_with(60)
     def test_recorded_deployed_bindings_are_ready_without_standalone_os_or_disk_checks(self):
         self.assertEqual(self.h['arc_pending'](self.good), [])
         updated = copy.deepcopy(self.good)

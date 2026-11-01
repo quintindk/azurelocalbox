@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import runpy
 import re
+import subprocess
 import time
 import uuid
 
@@ -38,6 +39,11 @@ def arc_observation():
         'customLocation': get_projection(CUSTOM_LOCATION, '2021-08-15',
             '{id:id,name:name,location:location,provisioningState:properties.provisioningState,hostResourceId:properties.hostResourceId,namespace:properties.namespace}'),
     }
+
+
+def arc_account():
+    # The operator's CLI default may legitimately target another subscription.
+    return az(['account', 'show', '--subscription', SUB, '--query', '{id:id,tenantId:tenantId,state:state}'])
 
 
 def arc_pending(data):
@@ -94,7 +100,7 @@ def main_arc_readiness(wait_seconds=600):
     head = D['A']['source_guard'](['scripts/inspect-smal-three-node-cloud-health.py',
         'scripts/deploy-smal-three-node-cluster.py', 'scripts/smal-three-node-platform.py',
         'scripts/test_smal_arc_readiness.py'])
-    account = az(['account', 'show', '--query', '{id:id,tenantId:tenantId,state:state}'])
+    account = arc_account()
     if account != {'id': SUB, 'tenantId': P['A']['H']['TENANT'], 'state': 'Enabled'}:
         raise RuntimeError('Approved tenant/subscription differs; no identity switch requested')
     path = OUT / ('arc-readiness-' + datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8] + '.json')
@@ -106,7 +112,7 @@ def main_arc_readiness(wait_seconds=600):
     try:
         record['result'] = observe_arc(wait_seconds)
         record['status'] = 'arc-ready' if record['result']['arcReadinessVerified'] else 'arc-pending-no-repair'
-    except (RuntimeError, ValueError, KeyError, TypeError, OSError) as error:
+    except (subprocess.TimeoutExpired, RuntimeError, ValueError, KeyError, TypeError, OSError) as error:
         record['status'] = 'arc-read-failed-no-repair'; record['errorType'] = type(error).__name__
         if isinstance(error, RuntimeError): record['error'] = str(error)
     record['finishedAtUtc'] = datetime.now(timezone.utc).isoformat()
