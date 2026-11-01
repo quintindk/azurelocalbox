@@ -188,3 +188,26 @@ for post-start storage checks. Do not apply the original standalone/pre-deployme
 12-device acceptance gate to the deployed, expanded cluster. Startup itself only
 restores the original VM identities and checks heartbeats; it never resets accounts,
 re-registers Arc, recreates storage or runs cluster deployment.
+
+## Separate post-start Arc readiness test
+
+Guest heartbeats do not establish Arc readiness. The existing cloud observer has an Arc-only,
+read-only mode for the deployed three-node identities, resource bridge and custom location:
+
+```bash
+python3 -B /home/quintin/play/azurelocalbox/scripts/inspect-smal-three-node-cloud-health.py --arc-readiness
+```
+
+It requires all three exact Arc managed identities to report Connected/Succeeded, the exact
+bridge to report Running/Succeeded, and the custom location to be Succeeded/bound to that bridge
+in its existing namespace. The existing tenant/subscription and committed/pushed-source checks
+remain. It does not pin the old human user ID, inspect guest secrets, issue registration/repair
+commands or read kubeconfig. The original full-cloud observation mode remains unchanged.
+
+The default wait is bounded at 600 seconds to allow reported post-boot convergence. Use
+`--wait-seconds 0` for a single observation. Identity/binding drift, failed provisioning or read
+permission errors stop the test. Non-ready states time out as pending, never as success. A unique
+canonical result receipt is retained; do not create a duplicate SMAL journal or restart nodes
+merely to make Arc reconnect. Success establishes only these reported cloud states/bindings,
+not full cluster, application, workload-extension or security acceptance. Boot encryption and
+audit-delivery/recovery gates remain separate.
