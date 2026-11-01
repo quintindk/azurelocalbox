@@ -19,7 +19,6 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 SUB = '8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea'
 TENANT = 'c6e67968-af25-4557-ab8b-06b693048d3b'
-PRINCIPAL = '82f494a8-b9f5-46fc-b0f7-c70be0572a63'
 RG = 'rg-localbox-nodes-san-1'
 HOST = 'LocalBox-Client'
 VM_ID = f'/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Compute/virtualMachines/{HOST}'
@@ -38,6 +37,13 @@ def az(args, timeout=90):
         # Do not put CLI diagnostics, auth flows or cached credentials in receipts.
         raise RuntimeError('Azure CLI request failed. Check sign-in, PIM and scope in your terminal. No automatic activation or retry.')
     return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def verify_account(account):
+    # Authorisation belongs to Azure RBAC, not a historical operator's object ID.
+    # Keep the approved target scope pinned and never switch identities or activate roles.
+    if account.get('id') != SUB or account.get('tenantId') != TENANT or account.get('state') != 'Enabled':
+        raise RuntimeError('Approved subscription/tenant differs.')
 
 
 def verify_source():
@@ -171,11 +177,7 @@ def main(host_timeout=900):
         try:
             record['sourceCommit'] = verify_source()
             ensure_private_vpn(record, save)
-            account = az(['account', 'show', '--subscription', SUB])
-            if account.get('id') != SUB or account.get('tenantId') != TENANT or account.get('state') != 'Enabled':
-                raise RuntimeError('Approved subscription/tenant differs.')
-            if az(['ad', 'signed-in-user', 'show', '--query', 'id']) != PRINCIPAL:
-                raise RuntimeError('Approved signed-in identity differs.')
+            verify_account(az(['account', 'show', '--subscription', SUB]))
             ensure_host(host_state(), host_timeout, record, save)
             record['status'] = 'starting-and-checking-nested-guests'
             record['privateGuestReceipt'] = 'docs/deployment-2026-10-27/private-ssh-' + run + '.json'

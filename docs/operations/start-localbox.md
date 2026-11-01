@@ -41,8 +41,12 @@ python3 -B scripts/start-smal-localbox.py
 
 ## Prerequisites
 
-- Existing Azure CLI sign-in with the approved account. Activate existing PIM
-  access manually if needed. No role activation or grant is performed by this command.
+- Existing Azure CLI sign-in in the approved tenant/subscription with the required Azure RBAC
+  permissions. The owner removed the historical user-object-ID pin on 2026-11-01 to use the
+  current personal account. The routine does not assert that account permissions are equivalent;
+  Azure enforces each request. Activate existing PIM access manually if needed. No identity switch,
+  role activation or grant is performed by this command. Tenant/subscription and exact resource
+  checks remain mandatory. Canonical result/uncertainty receipts are retained.
 - Existing NetworkManager VPN profile `entlz-san-cert`, with its certificate and
   authentication already configured. The command now connects it when needed.
   A healthy private path is left alone. An Active profile without working private

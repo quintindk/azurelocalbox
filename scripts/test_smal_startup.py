@@ -15,6 +15,19 @@ class StartupTests(unittest.TestCase):
         self.h = runpy.run_path(str(ROOT / 'scripts/start-smal-localbox.py'), run_name='startup_test')
         self.scope = self.h['ensure_host'].__globals__
 
+
+    def test_startup_accepts_current_account_without_a_historical_user_id_pin(self):
+        account = {'id': self.h['SUB'], 'tenantId': self.h['TENANT'], 'state': 'Enabled',
+                   'user': {'name': 'personal-account@example.invalid', 'type': 'user'}}
+        self.h['verify_account'](account)
+        self.assertNotIn('PRINCIPAL', self.h)
+        self.assertNotIn('signed-in-user', (ROOT / 'scripts/start-smal-localbox.py').read_text())
+
+    def test_startup_still_rejects_wrong_subscription_tenant_or_disabled_account(self):
+        good = {'id': self.h['SUB'], 'tenantId': self.h['TENANT'], 'state': 'Enabled'}
+        for key, value in [('id', 'other-subscription'), ('tenantId', 'other-tenant'), ('state', 'Disabled')]:
+            with self.subTest(field=key), self.assertRaisesRegex(RuntimeError, 'subscription/tenant'):
+                self.h['verify_account'](good | {key: value})
     def test_node03_startup_binding_comes_from_completed_real_guest(self):
         proof = json.loads((ROOT / 'docs/deployment-2026-10-29/node03-local-completion.json').read_text())
         self.assertEqual(len(self.h['GUESTS']), 4)
