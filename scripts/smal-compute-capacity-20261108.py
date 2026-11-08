@@ -32,7 +32,8 @@ GUESTS = {
 NODES = ["LB-NODE01", "LB-NODE02", "LB-NODE03"]
 INVENTORY = {"inventory": "scripts/smal-compute-capacity-20261108-common.ps1",
              "inventory-nodes": "scripts/smal-compute-capacity-20261108-nodes.ps1",
-             "inventory-dc": "scripts/smal-compute-capacity-20261108-dc.ps1"}
+             "inventory-dc": "scripts/smal-compute-capacity-20261108-dc.ps1",
+             "inventory-topology": "scripts/smal-compute-capacity-20261108-topology.ps1"}
 PRIVATE_STAGES = ["inspect", "shutdown", *[s for n in NODES for s in (f"stop-{n}", f"resize-{n}", f"resume-{n}")]]
 VM_FIELDS = ("id", "vmId", "location", "identity", "networkProfile", "osProfile", "storageProfile",
              "securityProfile", "tags", "priority", "licenseType", "zones", "availabilitySet",

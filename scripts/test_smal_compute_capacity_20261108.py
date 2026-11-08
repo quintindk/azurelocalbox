@@ -176,7 +176,7 @@ class CapacityTests(unittest.TestCase):
         command = "$ComputeCapacityLibraryOnly=$true;. '" + str(common) + "';"
         command += "Assert-ComputeEqual @{a=@(@{id='same';size=128})} ('{\"a\":[{\"id\":\"same\",\"size\":128}]}'|ConvertFrom-Json) 'equal';"
         command += "$rejected=$false;try{Assert-ComputeEqual @{id='new'} @{id='old'} 'drift'}catch{$rejected=$true};if(-not $rejected){exit 1};"
-        files = [common, stage, ROOT / 'scripts/smal-compute-capacity-20261108-nodes.ps1', ROOT / 'scripts/smal-compute-capacity-20261108-dc.ps1']
+        files = [common, stage, ROOT / 'scripts/smal-compute-capacity-20261108-nodes.ps1', ROOT / 'scripts/smal-compute-capacity-20261108-dc.ps1', ROOT / 'scripts/smal-compute-capacity-20261108-topology.ps1']
         command += "foreach($f in @(" + ','.join("'" + str(f) + "'" for f in files) + ")){$t=$null;$e=$null;$null=[System.Management.Automation.Language.Parser]::ParseFile($f,[ref]$t,[ref]$e);if($e.Count){exit 2}}"
         result = subprocess.run(["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
