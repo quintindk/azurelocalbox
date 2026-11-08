@@ -1,0 +1,12 @@
+{
+  "decision": "approve-exact-binding-effect",
+  "planSha256": "fe9aa027abc6b5574f4763cf5dce8ed15606cdd77f2b969f6a6098a4f3a23aef",
+  "requestSha256": "b98f3852ba486545980a12ddf90b65a46c9d7e07b768d1dbda0ee7173efc1cda",
+  "phase": "parent-authorised-pre-resize",
+  "capacityPhaseComplete": false,
+  "exclusiveAzureWriter": true,
+  "parentDisruptionHold": true,
+  "noActiveOrUncertainHostGuestMutation": true,
+  "approvalSource": "explicit-parent-direction-2026-11-08",
+  "operatorObjectId": "fab70700-36e8-4cf5-ba5d-86ed49003fcf"
+}

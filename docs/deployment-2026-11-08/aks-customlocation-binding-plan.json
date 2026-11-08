@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "preparedAtUtc": "2026-11-08T07:49:16.075562+00:00",
+  "status": "technical-candidate-not-effect-approval",
+  "customLocationId": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1",
+  "bridgeId": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge",
+  "apiVersion": "2021-08-15",
+  "method": "PATCH",
+  "requestBody": {"properties": {"clusterExtensionIds": [
+    "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/vmss-hci",
+    "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/hybridaksextension"
+  ]}},
+  "requestSha256": "b98f3852ba486545980a12ddf90b65a46c9d7e07b768d1dbda0ee7173efc1cda",
+  "baseline": {
+    "customLocation": {
+      "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1",
+      "location": "westeurope",
+      "name": "cl-localbox-smal-weu-1",
+      "properties": {
+        "authentication": {},
+        "clusterExtensionIds": ["/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/vmss-hci"],
+        "displayName": "cl-localbox-smal-weu-1",
+        "hostResourceId": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge",
+        "namespace": "default",
+        "provisioningState": "Succeeded"
+      },
+      "systemData": {
+        "createdAt": "2026-10-30T11:30:07.8332933Z",
+        "createdBy": "839befd4-93f7-44f8-8bf1-2cac522f40e0",
+        "createdByType": "Application",
+        "lastModifiedAt": "2026-10-30T11:44:03.9870732Z",
+        "lastModifiedBy": "839befd4-93f7-44f8-8bf1-2cac522f40e0",
+        "lastModifiedByType": "Application"
+      },
+      "type": "Microsoft.ExtendedLocation/customLocations"
+    },
+    "extensions": {
+      "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/vmss-hci": {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/vmss-hci",
+        "extensionType": "microsoft.azstackhci.operator",
+        "scope": {"cluster": {"releaseNamespace": "helm-operator2"}},
+        "provisioningState": "Succeeded",
+        "currentVersion": "5.22.1",
+        "version": "5.22.1",
+        "releaseTrain": "stable",
+        "serviceAccount": "default",
+        "configurationSha256": "4ef98ea460c542a4bf92c3ec24e6396d78edf40c8519760989a8403c26cd9bac"
+      },
+      "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/hybridaksextension": {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/hybridaksextension",
+        "extensionType": "microsoft.hybridaksoperator",
+        "scope": {"cluster": {"releaseNamespace": "hybridaks-operator-system"}},
+        "provisioningState": "Succeeded",
+        "currentVersion": "7.2.12",
+        "version": null,
+        "releaseTrain": "stable",
+        "serviceAccount": "default",
+        "configurationSha256": "7ca51b11d96f5129a3c6c74564adb3bc62be3236a06ad7539a39d9e4fa8a3dd0"
+      }
+    },
+    "enabled": {
+      "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ResourceConnector/appliances/smal-localbox01-arcbridge/providers/Microsoft.KubernetesConfiguration/extensions/vmss-hci": {
+        "propertiesSha256": "cb2d6daa15208de7906bb06be658f70265be95f2fe05f79f04c5831c08b4fad2",
+        "allTypesSha256": "a32376dabecd659b1e730ba5e1c91c288a7f1ece0d3e5dd7ad0ea943b7d5bdab",
+        "allTypesCount": 240,
+        "types": [
+          ["microsoft.azurestackhci", "galleryimages", "2024-01-01"],
+          ["microsoft.azurestackhci", "logicalnetworks", "2024-01-01"],
+          ["microsoft.azurestackhci", "marketplacegalleryimages", "2024-01-01"],
+          ["microsoft.azurestackhci", "networkinterfaces", "2024-01-01"],
+          ["microsoft.azurestackhci", "storagecontainers", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualharddisks", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualmachineinstances", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualmachineinstances/hybrididentitymetadata", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualmachineinstances/restart", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualmachineinstances/start", "2024-01-01"],
+          ["microsoft.azurestackhci", "virtualmachineinstances/stop", "2024-01-01"]
+        ]
+      }
+    },
+    "resourceBindings": [
+      {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.AzureStackHCI/logicalNetworks/smal-localbox01-InfraLNET",
+        "type": "microsoft.azurestackhci/logicalnetworks",
+        "extendedLocation": {"name": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1", "type": "CustomLocation"}
+      },
+      {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.AzureStackHCI/storageContainers/UserStorage1-a0c959f5b11340a98251977a107de6c9",
+        "type": "microsoft.azurestackhci/storagecontainers",
+        "extendedLocation": {"name": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1", "type": "CustomLocation"}
+      },
+      {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.AzureStackHCI/storageContainers/UserStorage2-530ec696726a42f29b1af25041c88f67",
+        "type": "microsoft.azurestackhci/storagecontainers",
+        "extendedLocation": {"name": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1", "type": "CustomLocation"}
+      },
+      {
+        "id": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.AzureStackHCI/storageContainers/UserStorage3-174bf825e17a4352992a21b292a7342a",
+        "type": "microsoft.azurestackhci/storagecontainers",
+        "extendedLocation": {"name": "/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1", "type": "CustomLocation"}
+      }
+    ],
+    "etag": null
+  },
+  "baselineSha256": "8bd3a9bc9991c848b8ac68099f98bdd4c11e7fdb6a9a2fd5d63a62819b6c732a",
+  "writeAllowlist": ["/subscriptions/8d3c4bb2-fdf8-4bca-bb92-e387bd4766ea/resourceGroups/rg-localbox-platform-weu-1/providers/Microsoft.ExtendedLocation/customLocations/cl-localbox-smal-weu-1"],
+  "changedFields": ["properties.clusterExtensionIds"],
+  "concurrency": "exclusive-parent-Azure-writer-plus-immediate-baseline-GET-not-atomic-CAS",
+  "etagContractVerified": false,
+  "executionApproval": null
+}
