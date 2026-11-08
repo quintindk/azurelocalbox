@@ -30,6 +30,9 @@ GUESTS = {
     "LB-NODE03": "5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9",
 }
 NODES = ["LB-NODE01", "LB-NODE02", "LB-NODE03"]
+INVENTORY = {"inventory": "scripts/smal-compute-capacity-20261108-common.ps1",
+             "inventory-nodes": "scripts/smal-compute-capacity-20261108-nodes.ps1",
+             "inventory-dc": "scripts/smal-compute-capacity-20261108-dc.ps1"}
 PRIVATE_STAGES = ["inspect", "shutdown", *[s for n in NODES for s in (f"stop-{n}", f"resize-{n}", f"resume-{n}")]]
 VM_FIELDS = ("id", "vmId", "location", "identity", "networkProfile", "osProfile", "storageProfile",
              "securityProfile", "tags", "priority", "licenseType", "zones", "availabilitySet",
@@ -226,6 +229,7 @@ def source_guard(plan, inventory=False):
              "scripts/smal-compute-capacity-20261108-stage.ps1", "scripts/test_smal_compute_capacity_20261108.py",
              "docs/deployment-2026-11-08-capacity/plan.pending.json",
              "scripts/smal-private-powershell.py", "scripts/start-smal-localbox.py", "scripts/start-smal-existing-guests.ps1"]
+    names.extend(INVENTORY.values())
     if inventory:
         require(plan == json.loads((OUT / "plan.pending.json").read_text()), "Inventory must use exact pending fixed plan")
         rendered = {}
@@ -273,7 +277,7 @@ def private(stage, key):
     name = "compute-" + key
     require(len(name) <= 64, "Receipt key too long")
     with contextlib.redirect_stdout(io.StringIO()):
-        script = "scripts/smal-compute-capacity-20261108-common.ps1" if stage == "inventory" else "scripts/smal-compute-capacity-20261108-" + stage.lower() + ".ps1"
+        script = INVENTORY[stage] if stage in INVENTORY else "scripts/smal-compute-capacity-20261108-" + stage.lower() + ".ps1"
         code = transport["main"](script, name)
     path = transport["OUT"] / ("private-ssh-" + name + ".json")
     proof = json.loads(path.read_text())
@@ -306,11 +310,11 @@ def completed(stage, plan_sha):
 
 
 def execute(stage, key, plan, expected_sha, evidence=None):
-    if stage != "inventory":
+    if stage not in INVENTORY:
         validate_plan(plan, approved=True)
     require(expected_sha == digest(plan), "Parent reviewed plan differs")
     require(key and all(c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in key) and len(key) <= 48, "Immutable key invalid")
-    head = source_guard(plan, inventory=stage == "inventory")
+    head = source_guard(plan, inventory=stage in INVENTORY)
     OUT.mkdir(exist_ok=True)
     path = OUT / ("operation-" + key + ".json")
     require(not path.exists(), "Existing/uncertain receipt. Inspect, do not replay")
@@ -319,14 +323,14 @@ def execute(stage, key, plan, expected_sha, evidence=None):
     claim(path, row)
     try:
         cloud = get_cloud(); row["cloudBefore"] = cloud
-        if stage != "inventory":
+        if stage not in INVENTORY:
             verify_cloud(cloud, plan)
         else:
             require(cloud["projection"]["vm"]["id"].lower() == HOST.lower()
                     and cloud["projection"]["vm"]["vmId"] == plan["hostVmId"], "Inventory host identity differs")
-        if stage in ("inventory", "inspect", "verify"):
+        if stage in (*INVENTORY, "inspect", "verify"):
             require(cloud["power"] == "PowerState/running", "Inspection requires existing Running host")
-            row["private"] = private("inventory" if stage == "inventory" else "inspect", key)
+            row["private"] = private(stage if stage in INVENTORY else "inspect", key)
             if stage == "verify":
                 profiles = original_profiles()
                 profiles.update({n: (16, 128 * 1024**3) for n in NODES})
@@ -381,7 +385,7 @@ def execute(stage, key, plan, expected_sha, evidence=None):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("action", choices=["render", "render-inventory", "cloud-read", "inventory", "reconcile-cloud", *PRIVATE_STAGES, "verify", "deallocate", "host-size"])
+    p.add_argument("action", choices=["render", "cloud-read", *INVENTORY, "reconcile-cloud", *PRIVATE_STAGES, "verify", "deallocate", "host-size"])
     p.add_argument("--plan", type=Path, default=OUT / "plan.sealed.json")
     p.add_argument("--key"); p.add_argument("--expected-plan-sha256"); p.add_argument("--off-evidence", type=Path)
     p.add_argument("--receipt", type=Path, help="Exact original cloud effect receipt for read-only reconciliation")
@@ -389,9 +393,7 @@ def main():
     args = p.parse_args()
     if args.action == "cloud-read":
         print(json.dumps(get_cloud(), indent=2)); return
-    plan = json.loads((OUT / "plan.pending.json").read_text()) if args.action in ("inventory", "render-inventory") else json.loads(args.plan.read_text())
-    if args.action == "render-inventory":
-        print(json.dumps(render_files(plan, ["inventory"]), indent=2)); return
+    plan = json.loads((OUT / "plan.pending.json").read_text()) if args.action in INVENTORY else json.loads(args.plan.read_text())
     if args.action == "render":
         print(json.dumps(render(plan), indent=2)); return
     require(args.mutex_handover, "Parent PLATFORM mutex handover not acknowledged")

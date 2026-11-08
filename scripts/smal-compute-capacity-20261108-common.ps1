@@ -240,7 +240,7 @@ if ($ComputeCapacityLibraryOnly -ne $true) {
     } }
     $ErrorActionPreference = 'Stop'
     try {
-        $snapshot = Read-ComputeSnapshot
+        $snapshot = Read-ComputeSnapshot $false
         $snapshot.outerNetwork = @{
             ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 | Sort-Object InterfaceIndex, IPAddress | Select-Object InterfaceIndex, InterfaceAlias, IPAddress, PrefixLength, AddressState)
             routes = @(Get-NetRoute -AddressFamily IPv4 | Sort-Object InterfaceIndex, DestinationPrefix | Select-Object InterfaceIndex, DestinationPrefix, NextHop, RouteMetric)
@@ -249,7 +249,8 @@ if ($ComputeCapacityLibraryOnly -ne $true) {
             nat = @(Get-NetNat | Select-Object Name, InternalIPInterfaceAddressPrefix, Active)
             natStaticMappings = @(Get-NetNatStaticMapping | Select-Object NatName, Protocol, ExternalIPAddress, ExternalPort, InternalIPAddress, InternalPort)
         }
-        $snapshot.dcNetwork = Read-ComputeDcNetwork
+        $snapshot.observerPart = 'host-only'
+        $snapshot.powershellProcesses = @(Get-Process -Name powershell -ErrorAction SilentlyContinue | Select-Object Id, StartTime, CPU, WorkingSet64)
         @{ status = 'complete'; mutationPerformed = $false; snapshot = $snapshot } | ConvertTo-Json -Depth 30 -Compress
     } catch {
         @{ status = 'failed-read-only'; mutationPerformed = $false; errorType = $_.Exception.GetType().Name; errorLine = $_.InvocationInfo.ScriptLineNumber } | ConvertTo-Json -Compress

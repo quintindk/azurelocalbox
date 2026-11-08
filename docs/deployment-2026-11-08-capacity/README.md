@@ -49,7 +49,8 @@ Sizing/source discussion is maintained separately in SMAL at
   preservation guards, canonical transport invocation, individually claimed effect
   receipts, minimal ETag-bound size PATCH and explicit read-only cloud reconciliation.
 - `scripts/smal-compute-capacity-20261108-common.ps1`: direct invocation is read-only
-  inventory. Uses existing node ASBuiltInAdmin / RID 500 and existing DC domain RID 500
+  host inventory. Separate `...-nodes.ps1` and `...-dc.ps1` collect bounded node/cluster
+  and DC/network facts. Uses existing node ASBuiltInAdmin / RID 500 and existing DC domain RID 500
   credentials, with no fallback, reset, export, installation or borrowed credential.
 - `scripts/smal-compute-capacity-20261108-stage.ps1`: a source template, not a dispatchable
   standalone operation. Rendered stages embed the exact approved public plan/digest.
@@ -78,14 +79,14 @@ Only after this source is committed/pushed and the parent mutex handover is acti
 AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no python3 -B scripts/smal-compute-capacity-20261108.py cloud-read
 ```
 
-For inventory, supply the canonical pending plan's deterministic JSON digest printed by
+For `inventory`, `inventory-nodes` and `inventory-dc`, supply the canonical pending plan's deterministic JSON digest printed by
 the Python `digest` helper, an immutable receipt key and `--mutex-handover`. `inventory`
 does not need execution approval and invokes only the direct read-only common observer.
 The observer never connects or reconnects VPN. Its canonical transport retains the
 existing pinned SSH/private Bastion path and 90-second bound. A timeout is retained as
 failed observation, not a reason to increase bounds or replay guest effects.
 
-The observer captures all four VM profiles, attachments/GUIDs, vTPM protector hashes,
+The combined observations capture all four VM profiles, attachments/GUIDs, vTPM protector hashes,
 processor/memory/NUMA settings, all-node capacity, cluster/pool/CSV/VD identity and health,
 existing infrastructure VM configuration and placement, IPv4/routes/neighbours/DNS/NAT,
 DC DNS/DHCP metadata and bounded address echo observations. No raw protector/secret is
@@ -164,3 +165,18 @@ Offline checks prove guard/parser behaviour, not Windows cmdlet compatibility or
 cluster correctness. Live observer fields must be inspected before plan sealing. Any
 missing CPU/NUMA property, unproved topology, unknown guest/bridge resource, service or
 authentication error is a concrete blocker. Do not infer or fabricate the missing values.
+
+### First observer timeout retained
+
+Source `817096d` attempted one GET-only cloud plus full guest inventory at 09:31 SAST.
+The canonical 90-second private command timed out after successful authentication.
+`docs/deployment-2026-10-27/private-ssh-compute-inventory-20261108-01.json` records the
+timeout, closed tunnel/socket and no returned guest result. The local
+`operation-inventory-20261108-01.json` records no mutation request and retains the cloud
+projection. Both originals remain untouched. No guest effects were present in that direct
+observer source. Its outcome is not a completed inventory or a licence to extend bounds.
+
+The source repair splits host, node/cluster and DC/network reads into distinct commands,
+each still subject to the unchanged canonical transport timeout. New immutable receipt
+keys distinguish later observations. Do not replay the original failed request or mistake
+a repaired read-only observer for permission to disrupt the catalogue initialisation.
