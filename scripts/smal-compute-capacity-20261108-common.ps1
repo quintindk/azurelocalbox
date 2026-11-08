@@ -103,7 +103,7 @@ function Read-ComputeSnapshot([bool]$readCluster = $true) {
     $cpu = @(Get-CimInstance Win32_Processor)
     $hostCapacity = @{ logicalProcessors = (Get-VMHost).LogicalProcessorCount; physicalCores = ($cpu | Measure-Object NumberOfCores -Sum).Sum
         memoryBytes = $system.TotalPhysicalMemory; freeMemoryBytes = $os.FreePhysicalMemory * 1KB
-        numa = @(Get-VMHostNumaNode | Sort-Object NodeId | ForEach-Object { @{ nodeId = $_.NodeId; logicalProcessors = $_.ProcessorCount; memoryBytes = $_.MemoryTotal } }) }
+        numa = @(Get-VMHostNumaNode | Sort-Object NodeId | ForEach-Object { @{ nodeId = $_.NodeId; logicalProcessors = @($_.ProcessorsAvailability).Count; memoryBytes = [long]$_.MemoryTotal * 1MB; processorAvailabilityPercent = @($_.ProcessorsAvailability) } }) }
     $hostStatic = @{
         outerPools = @(Get-StoragePool | Where-Object IsPrimordial -EQ $false | Sort-Object UniqueId | ForEach-Object {
             @{ id = $_.UniqueId; size = $_.Size; members = @($_ | Get-PhysicalDisk | Sort-Object UniqueId | ForEach-Object { @{ id = $_.UniqueId; size = $_.Size } }) }
@@ -155,7 +155,7 @@ function Read-ComputeSnapshot([bool]$readCluster = $true) {
                     @{ logicalProcessors = $hostInfo.LogicalProcessorCount; memoryBytes = $systemInfo.TotalPhysicalMemory
                        freeMemoryBytes = $osInfo.FreePhysicalMemory * 1KB
                        cpuUtilisationPercent = (Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor | Where-Object Name -EQ '_Total').PercentProcessorTime
-                       numa = @(Get-VMHostNumaNode | Sort-Object NodeId | ForEach-Object { @{ nodeId = $_.NodeId; logicalProcessors = $_.ProcessorCount; memoryBytes = $_.MemoryTotal } })
+                       numa = @(Get-VMHostNumaNode | Sort-Object NodeId | ForEach-Object { @{ nodeId = $_.NodeId; logicalProcessors = @($_.ProcessorsAvailability).Count; memoryBytes = [long]$_.MemoryTotal * 1MB; processorAvailabilityPercent = @($_.ProcessorsAvailability) } })
                        network = @{ switches = @(Get-VMSwitch | Sort-Object Name | ForEach-Object { @{ name = $_.Name; id = $_.Id.ToString(); type = $_.SwitchType.ToString() } })
                            adapters = @(Get-NetAdapter | Sort-Object InterfaceIndex | Select-Object InterfaceIndex, Name, Status, MacAddress, InterfaceDescription, LinkSpeed)
                            ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 | Sort-Object InterfaceIndex, IPAddress | Select-Object InterfaceIndex, InterfaceAlias, IPAddress, PrefixLength, AddressState)

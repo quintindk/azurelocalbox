@@ -39,10 +39,10 @@ def fixture():
     p["admission"] = {"repairReserveBytes": 510 * GIB, "requiredPhysicalFreeBytes": 1800 * GIB,
                       "volumeBudgets": {letter: {"maximumVhdBytes": 5000 * GIB, "runtimeBytes": 388 * GIB,
                                                "metadataBytes": 16 * GIB, "freeFloorBytes": 200 * GIB} for letter in "CVWX"},
-                      "platformCpuReservePerNode": {n: 4 for n in H["NODES"]},
-                      "platformMemoryReservePerNodeBytes": {n: 16 * GIB for n in H["NODES"]},
+                      "platformCpuReservePerNode": {n: 8 if n == "LB-NODE03" else 4 for n in H["NODES"]},
+                      "platformMemoryReservePerNodeBytes": {n: (24 if n == "LB-NODE03" else 16) * GIB for n in H["NODES"]},
                       "placement": {"controlplane": "LB-NODE01", "system": "LB-NODE01", "inference": "LB-NODE02",
-                                    "workload": "LB-NODE02", "replacement": "LB-NODE03"}, "maintenanceConflictChecked": True}
+                                    "workload": "LB-NODE02", "replacement": "LB-NODE03"}, "infrastructureVmNode": "LB-NODE03", "maintenanceConflictChecked": True}
     p["executionApproval"] = {"parentGo": True, "unsignedPlanSha256": H["digest"](p),
                               "approvedEffects": ["graceful-shutdown", "outer-size-only", "serial-three-guest-profiles", "canonical-startup"]}
     snapshot = {"atUtc": H["now"](), "mutationPerformed": False,
@@ -96,6 +96,17 @@ class CapacityTests(unittest.TestCase):
     def test_cpu_and_ram_placement_must_fit_each_node(self):
         self.plan["admission"]["placement"]["replacement"] = "LB-NODE01"
         with self.assertRaisesRegex(ValueError, "CPU"): H["validate_plan"](self.plan)
+
+    def test_infrastructure_cpu_cannot_be_omitted_from_reserve(self):
+        self.plan["admission"]["platformCpuReservePerNode"]["LB-NODE03"] = 4
+        with self.assertRaisesRegex(ValueError, "infrastructure VM"): H["validate_plan"](self.plan)
+
+    def test_numa_uses_observed_property_and_mib_conversion(self):
+        for name in ("common", "nodes"):
+            source = (ROOT / ("scripts/smal-compute-capacity-20261108-" + name + ".ps1")).read_text()
+            self.assertIn("@($_.ProcessorsAvailability).Count", source)
+            self.assertIn("[long]$_.MemoryTotal * 1MB", source)
+            self.assertNotIn("logicalProcessors = $_.ProcessorCount", source)
 
     def test_healthy_snapshot_and_bridge_preserved(self):
         H["verify_snapshot"](self.snapshot, self.plan, H["original_profiles"](), expanded=True)

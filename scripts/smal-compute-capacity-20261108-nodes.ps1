@@ -32,7 +32,7 @@ try {
             if ($env:COMPUTERNAME -cne $expected -or -not $admin.Enabled -or -not $admin.SID.Value.EndsWith('-500') -or [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -cne $admin.SID.Value) { throw 'Exact RID 500 identity differs' }
             $h = Get-VMHost; $system = Get-CimInstance Win32_ComputerSystem; $os = Get-CimInstance Win32_OperatingSystem
             $result = @{ logicalProcessors = $h.LogicalProcessorCount; memoryBytes = $system.TotalPhysicalMemory; freeMemoryBytes = $os.FreePhysicalMemory * 1KB
-                numaRaw = @(Get-VMHostNumaNode | Select-Object NodeId, ProcessorCount, MemoryTotal, MemoryAvailable)
+                numa = @(Get-VMHostNumaNode | ForEach-Object { @{ nodeId = $_.NodeId; logicalProcessors = @($_.ProcessorsAvailability).Count; memoryBytes = [long]$_.MemoryTotal * 1MB; processorAvailabilityPercent = @($_.ProcessorsAvailability) } })
                 cpu = @(Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors)
                 cpuUtilisationPercent = (Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor | Where-Object Name -EQ '_Total').PercentProcessorTime
                 switches = @(Get-VMSwitch | Select-Object Name, Id, SwitchType, NetAdapterInterfaceDescription)
@@ -68,7 +68,7 @@ try {
                     virtualDisks = @(Get-VirtualDisk | Sort-Object UniqueId | ForEach-Object { @{ id = $_.UniqueId; size = $_.Size; copies = $_.NumberOfDataCopies; resiliency = $_.ResiliencySettingName; health = $_.HealthStatus.ToString() } })
                     csv = @(Get-ClusterSharedVolume -Cluster $c | Sort-Object Name | ForEach-Object { @{ name = $_.Name; id = $_.Id.ToString(); state = $_.State.ToString(); volumes = @($_.SharedVolumeInfo | ForEach-Object { @{ path = $_.FriendlyVolumeName; size = $_.Partition.Size; free = $_.Partition.FreeSpace } }) } })
                     jobs = @(Get-StorageJob | Where-Object JobState -NE Completed | ForEach-Object { @{ name = $_.Name; state = [string]$_.JobState } })
-                    groups = @(Get-ClusterGroup -Cluster $c | Select-Object Name, State, OwnerNode, GroupType)
+                    groups = @(Get-ClusterGroup -Cluster $c | ForEach-Object { @{ name = $_.Name; state = $_.State.ToString(); ownerNode = $_.OwnerNode.Name; type = $_.GroupType.ToString() } })
                     vmResources = @(Get-ClusterResource -Cluster $c | Where-Object ResourceType -EQ 'Virtual Machine' | ForEach-Object { @{ name = $_.Name; ownerGroup = $_.OwnerGroup.Name; ownerNode = $_.OwnerNode.Name; state = $_.State.ToString(); vmIdentity = @($_ | Get-ClusterParameter | Where-Object Name -EQ 'VmId' | Select-Object Name, Value) } }) }
             }
             return $result

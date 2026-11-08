@@ -116,12 +116,18 @@ def validate_plan(plan, approved=False):
     admission = plan.get("admission")
     require(isinstance(admission, dict), "Measured admission not sealed")
     require(set(admission) == {"repairReserveBytes", "requiredPhysicalFreeBytes", "volumeBudgets", "platformCpuReservePerNode",
-                               "platformMemoryReservePerNodeBytes", "placement", "maintenanceConflictChecked"}, "Admission schema")
+                               "platformMemoryReservePerNodeBytes", "placement", "infrastructureVmNode", "maintenanceConflictChecked"}, "Admission schema")
     require(admission["maintenanceConflictChecked"] is True, "Nightly/active operation conflict not reconciled")
     require(admission["repairReserveBytes"] > 0 and admission["requiredPhysicalFreeBytes"] >= 360 * 1024**3,
             "Physical reserve must include cache/headroom and AKS disks")
     require(set(admission["platformCpuReservePerNode"]) == set(NODES), "Per-node CPU reserve required")
     require(set(admission["platformMemoryReservePerNodeBytes"]) == set(NODES), "Per-node RAM reserve required")
+    bridge_node = admission["infrastructureVmNode"]
+    require(bridge_node in NODES, "Infrastructure owner admission required")
+    bridge = cluster["nestedVms"][0]
+    require(admission["platformCpuReservePerNode"][bridge_node] >= 4 + bridge["cpu"]
+            and admission["platformMemoryReservePerNodeBytes"][bridge_node] >= 16 * 1024**3 + bridge["memory"],
+            "Platform reserve must account for existing infrastructure VM as well as HCI host")
     expected_vms = {"controlplane": (4, 8), "system": (8, 32), "workload": (4, 16), "inference": (8, 32), "replacement": (8, 32)}
     require(set(admission["placement"]) == set(expected_vms), "Exact initial plus replacement placement")
     for node in NODES:
@@ -208,6 +214,53 @@ def verify_snapshot(row, plan, profiles, off=(), healthy=True, expanded=False):
 
 def original_profiles():
     return {n: (2, 4 * 1024**3) if n == "LB-DC01" else (8, 64 * 1024**3) for n in GUESTS}
+
+
+def build_candidate(host_receipt, nodes_receipt):
+    """Assemble an unsigned plan from complete source-bound reads. Never approve/write."""
+    require(host_receipt.get("status") == nodes_receipt.get("status") == "complete", "Incomplete inventory receipts")
+    require(host_receipt.get("stage") == "inventory" and nodes_receipt.get("stage") == "inventory-nodes", "Wrong inventory roles")
+    host = host_receipt["private"]["result"]["snapshot"]
+    data = nodes_receipt["private"]["result"]
+    require(data.get("status") == "complete" and data.get("mutationPerformed") is False, "Not read-only node observation")
+    fresh(host); fresh(data)
+    nodes = data["nodes"]; require(set(nodes) == set(NODES), "Exact all-node inventory required")
+    c = nodes["LB-NODE01"]["cluster"]
+    def text(v):
+        return v.get("Value") if isinstance(v, dict) else v
+    require(c["health"] == "Healthy" and not c["jobs"] and c["quorumType"] == "Majority" and c["witness"] is None,
+            "Cluster health/jobs/quorum block candidate")
+    require({n["Name"]: text(n["State"]) for n in c["nodes"]} == {n: "Up" for n in NODES}, "Not all nodes Up")
+    require(all(v["health"] == "Healthy" for v in c["virtualDisks"]) and all(v["state"] == "Online" for v in c["csv"]), "Unhealthy mirrors/CSVs")
+    nested = sorted([v for node in nodes.values() for v in node["nestedVms"]], key=lambda v: v["id"])
+    require(len(nested) == 1 and nested[0]["id"] == "4c6ca5cc-8c9a-499b-8ffe-c029bbfd3522", "Exact existing infrastructure VM required")
+    bridge_owner = next(n for n, v in nodes.items() if v["nestedVms"])
+    vm_resources = c["vmResources"]
+    require(len(vm_resources) == 1 and vm_resources[0]["ownerNode"] == bridge_owner
+            and vm_resources[0]["state"] == "Online" and len(vm_resources[0]["vmIdentity"]) == 1
+            and vm_resources[0]["vmIdentity"][0]["Value"].lower() == nested[0]["id"], "Cluster ownership/VM identity mapping unproved")
+    plan = json.loads((OUT / "plan.pending.json").read_text())
+    plan["baseline"] = {"cloud": host_receipt["cloudBefore"]["projection"], "hostStatic": host["hostStatic"],
+        "guestsStatic": host["guestsStatic"], "volumesStatic": host["volumesStatic"],
+        "clusterStatic": {"name": c["name"], "poolId": c["poolId"], "poolSize": c["poolSize"],
+            "members": [{k: m[k] for k in ("id", "size")} for m in c["members"]],
+            "virtualDisks": [{k: v[k] for k in ("id", "size", "copies", "resiliency")} for v in c["virtualDisks"]],
+            "csv": [{"name": v["name"], "id": v["id"], "volumes": [{k: w[k] for k in ("path", "size")} for w in v["volumes"]]} for v in c["csv"]],
+            "nestedVms": nested}}
+    volumes = {l: {"maximumVhdBytes": 0, "runtimeBytes": 0, "metadataBytes": 16 * 1024**3, "freeFloorBytes": 200 * 1024**3} for l in "CVWX"}
+    for g in host["guestsStatic"]:
+        for disk in g["disks"]: volumes[disk["path"][0]]["maximumVhdBytes"] += disk["size"]
+        for letter in {g["configurationLocation"][0], g["smartPagingLocation"][0]}:
+            volumes[letter]["runtimeBytes"] += (4 if g["name"] == "LB-DC01" else 128) * 1024**3
+    others = [n for n in NODES if n != bridge_owner]
+    plan["admission"] = {"repairReserveBytes": 510 * 1024**3, "requiredPhysicalFreeBytes": 360 * 1024**3,
+        "volumeBudgets": volumes, "platformCpuReservePerNode": {n: 4 + (nested[0]["cpu"] if n == bridge_owner else 0) for n in NODES},
+        "platformMemoryReservePerNodeBytes": {n: 16 * 1024**3 + (nested[0]["memory"] if n == bridge_owner else 0) for n in NODES},
+        "placement": {"controlplane": others[0], "system": others[0], "workload": others[1], "inference": others[1], "replacement": bridge_owner},
+        "infrastructureVmNode": bridge_owner,
+        "maintenanceConflictChecked": False}
+    # Operation conflict and parent GO stay false/null. These are not inferred from healthy storage.
+    return plan
 
 
 def render(plan):
