@@ -103,7 +103,7 @@ try {
                 $pins+=@{path=$path;sha256=$pin[1];signature='Valid';signerThumbprint=$pin[2]}
             }
             if (@(Get-Module -Name Moc).Count) {throw 'Unexpected pre-imported Moc module'}
-            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261109-01'
+            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261109-02'
             if (-not (Test-Path -LiteralPath $privateRoot) -or $PSCommandPath -ine (Join-Path $privateRoot 'client-read.ps1')) {throw 'Expected protected fixed client process required'}
             $begin=[IO.File]::Open((Join-Path $privateRoot 'client-began'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$begin.Dispose()
             $privateReady=$true
@@ -150,19 +150,79 @@ try {
     }
     # One fixed child, not a general dispatcher: catches vendor Out-Default/console output.
     $clientSource="function Invoke-FixedMocRead {`n"+$runtime.ToString()+"`n}`n"+
-        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261109-01\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
+        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261109-02\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
     $result=Invoke-Command -Session $session -ArgumentList $clientSource -ErrorAction Stop -ScriptBlock {
         param([string]$ClientSource)
         $ErrorActionPreference='Stop'
         if ($env:COMPUTERNAME -cne 'LB-NODE01' -or -not [Security.Principal.WindowsIdentity]::GetCurrent().User.Value.EndsWith('-500')) {throw 'Expected NODE01/RID500 client context'}
-        $root='C:\ProgramData\AzureLocalBox\MocRead-20261109-01'
-        if (Test-Path -LiteralPath $root) {return @{status='blocked-original-state-exists';privateRoot=$root;retryAllowed=$false}}
-        $null=New-Item $root -ItemType Directory
-        Set-Acl $root (Get-Acl 'C:\ProgramData\AzureLocalBox\Bootstrap\cluster-prereqs-20261028-01')
+        function Read-OriginalMocState([string]$Root) {
+            try {
+                $scriptPath=Join-Path $Root 'client-read.ps1'
+                $parent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($Root)) -Force -ErrorAction Stop
+                if ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Original operation parent redirected'}
+                $exists=Test-Path -LiteralPath $Root -ErrorAction Stop;$entries=@();$files=@{}
+                if ($exists) {
+                    $directory=Get-Item -LiteralPath $Root -Force -ErrorAction Stop
+                    if (-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {throw 'Original operation root is not a plain directory'}
+                    $entries=@(Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop)
+                }
+                $record=$null;$resultStatus='not-reported'
+                foreach($name in @('client-read.ps1','process.json','result.json')) {
+                    $path=Join-Path $Root $name;$item=@($entries|Where-Object Name -CEQ $name)
+                    $files[$name]=@{exists=($item.Count -eq 1)}
+                    if (-not $item.Count) {continue}
+                    if ($item.Count -ne 1 -or $item[0].PSIsContainer -or ($item[0].Attributes -band [IO.FileAttributes]::ReparsePoint)) {throw 'Original state entry redirected or invalid'}
+                    $files[$name].bytes=$item[0].Length;$files[$name].lastWriteUtc=$item[0].LastWriteTimeUtc.ToString('o')
+                    if ($name -ceq 'process.json') {
+                        if ($item[0].Length -gt 65536) {throw 'Original process record exceeds bound'}
+                        $value=Get-Content -LiteralPath $path -Raw -ErrorAction Stop|ConvertFrom-Json
+                        $record=@{status='unrecognised';pid=$null;sourceSha256=$null}
+                        if ($value.status -cin @('running','exited','uncertain-client-still-running-do-not-retry')) {$record.status=$value.status}
+                        if (($value.pid -is [int] -or $value.pid -is [long]) -and $value.pid -gt 0 -and $value.pid -le [int]::MaxValue) {$record.pid=$value.pid}
+                        if ($value.sourceSha256 -is [string] -and $value.sourceSha256 -cmatch '^[a-f0-9]{64}$') {$record.sourceSha256=$value.sourceSha256}
+                    }
+                    if ($name -ceq 'result.json') {
+                        if ($item[0].Length -gt 1048576) {throw 'Original safe result exceeds bound'}
+                        $value=Get-Content -LiteralPath $path -Raw -ErrorAction Stop|ConvertFrom-Json
+                        if ($value.status -cin @('complete','failed','scope-incomplete-stop')) {$resultStatus=$value.status}
+                    }
+                }
+                $processes=@(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction Stop)
+                $unknown=@($processes|Where-Object {[string]::IsNullOrWhiteSpace($_.CommandLine)}).Count
+                $matches=@($processes|Where-Object {$_.CommandLine -is [string] -and $_.CommandLine.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -ge 0}|ForEach-Object {
+                    @{pid=$_.ProcessId;creationUtc=$(if($_.CreationDate -is [datetime]){$_.CreationDate.ToUniversalTime().ToString('o')}else{'not-reported'});matchesOriginalScript=$true}
+                })
+                # Published -01 writes the script before starting the process and never deletes it.
+                # A returned/dead process alone is deliberately not independent settlement.
+                $unstarted=$entries.Count -eq 0 -and $matches.Count -eq 0 -and $unknown -eq 0
+                @{readComplete=$true;observedAtUtc=[DateTime]::UtcNow.ToString('o');root=$Root;rootExists=$exists;entryCount=$entries.Count;files=$files;processRecord=$record;safeResultStatus=$resultStatus;
+                  matchingProcesses=$matches;unreadablePowerShellCommandLineCount=$unknown;provedPrelaunchUnstarted=$unstarted;independentlySettled=$false;
+                  requiresIndependentSettlement=(-not $unstarted);rawCommandLinesExported=$false}
+            } catch { @{readComplete=$false;root=$Root;provedPrelaunchUnstarted=$false;independentlySettled=$false;requiresIndependentSettlement=$true;errorType=$_.Exception.GetType().FullName;errorCategory=[string]$_.CategoryInfo.Category} }
+        }
+        function New-ProtectedMocDirectory([string]$Root) {
+            if (Test-Path -LiteralPath $Root) {throw 'Fresh diagnostic root already exists; no replay'}
+            $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+            if (-not $sid.Value.EndsWith('-500')) {throw 'Current RID500 identity required'}
+            $acl=[Security.AccessControl.DirectorySecurity]::new();$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false)
+            foreach($principal in @($sid,[Security.Principal.SecurityIdentifier]::new('S-1-5-18'),[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))) {
+                $rule=[Security.AccessControl.FileSystemAccessRule]::new($principal,[Security.AccessControl.FileSystemRights]::FullControl,
+                    ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit),[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow)
+                $acl.AddAccessRule($rule)
+            }
+            $null=New-Item $Root -ItemType Directory -ErrorAction Stop
+            Set-Acl -LiteralPath $Root -AclObject $acl -ErrorAction Stop
+            if (-not (Get-Acl -LiteralPath $Root).AreAccessRulesProtected) {throw 'Node-local diagnostic DACL is not protected'}
+        }
+        $original=Read-OriginalMocState 'C:\ProgramData\AzureLocalBox\MocRead-20261109-01'
+        if ($original.readComplete -ne $true -or $original.provedPrelaunchUnstarted -ne $true) {return @{status='blocked-original-reconciliation-required';original=$original;retryAllowed=$false}}
+        $root='C:\ProgramData\AzureLocalBox\MocRead-20261109-02'
+        if (Test-Path -LiteralPath $root) {return @{status='blocked-second-root-already-exists';original=$original;secondRoot=(Read-OriginalMocState $root);retryAllowed=$false}}
+        New-ProtectedMocDirectory $root
         $script=Join-Path $root 'client-read.ps1';[IO.File]::WriteAllText($script,$ClientSource,[Text.UTF8Encoding]::new($false))
         $sourceSha=(Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant()
         $process=Start-Process -FilePath powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$script) -RedirectStandardOutput (Join-Path $root 'client.stdout') -RedirectStandardError (Join-Path $root 'client.stderr') -PassThru
-        $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root}
+        $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root;original=$original}
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
         if (-not $process.WaitForExit(75000)) {
             $record.status='uncertain-client-still-running-do-not-retry'
@@ -171,8 +231,8 @@ try {
         $process.Refresh();$record.status='exited';$record.exitCode=$process.ExitCode
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
         $path=Join-Path $root 'result.json'
-        if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -gt 1048576) {return @{status='failed-private-client-result-unavailable';process=$record;rawStreamsExported=$false}}
-        @{status='client-result';process=$record;result=(Get-Content -LiteralPath $path -Raw|ConvertFrom-Json);rawStreamsExported=$false}
+        if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -gt 1048576) {return @{status='failed-private-client-result-unavailable';original=$original;process=$record;rawStreamsExported=$false}}
+        @{status='client-result';original=$original;process=$record;result=(Get-Content -LiteralPath $path -Raw|ConvertFrom-Json);rawStreamsExported=$false}
     }
     @{node='LB-NODE01';vmId=$vm.Id.ToString();result=$result;atUtc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json -Depth 24 -Compress
 } catch {
