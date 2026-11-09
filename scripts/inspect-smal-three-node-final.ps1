@@ -52,6 +52,7 @@ function Get-SmalV3Hash([byte[]]$Bytes) {
     finally { $sha.Dispose() }
 }
 function Get-SmalV3Literal($Ast, [int]$Depth = 0) {
+    if ($Ast -is [Management.Automation.Language.VariableExpressionAst] -and $Ast.VariablePath.UserPath -cin @('true','false')) { return @{status='literal-boolean';complete=$true;value=($Ast.VariablePath.UserPath -ceq 'true')} }
     if ($Depth -gt 16) { return @{ status = 'unavailable-depth'; complete = $false } }
     if ($Ast -is [Management.Automation.Language.StatementBlockAst] -and $Ast.Statements.Count -eq 1) { return Get-SmalV3Literal $Ast.Statements[0] ($Depth + 1) }
     if ($Ast -is [Management.Automation.Language.PipelineAst] -and $Ast.PipelineElements.Count -eq 1) { return Get-SmalV3Literal $Ast.PipelineElements[0] ($Depth + 1) }
@@ -179,6 +180,7 @@ function Get-SmalV3MocContract {
     $base = 'C:\Program Files\WindowsPowerShell\Modules\Moc\1.2.161'
     $manifest = Get-SmalV3FileContract ($base + '\Moc.psd1')
     $root = Get-SmalV3FileContract ($base + '\Moc.psm1')
+    if ($manifest.sha256 -cne 'b4c171acdf6bdaf86a6751396e27b52714af2d1410505d1f3412103cf5435c3f' -or $root.sha256 -cne 'b9dbda4ab8c0ce6c77d8fa219a153983114afc859f5bb10689f6f3cf71025b7f') { throw 'Observed Moc public bytes drifted' }
     $manifestFields = @('RootModule','ModuleToProcess','ModuleVersion','GUID','RequiredModules','NestedModules','RequiredAssemblies','ScriptsToProcess','TypesToProcess','FormatsToProcess','FunctionsToExport','CmdletsToExport','AliasesToExport','PowerShellVersion','CLRVersion','DotNetFrameworkVersion','ProcessorArchitecture')
     $declarations = @()
     if ($manifest.parseIssueCount -eq 0) {
@@ -191,7 +193,7 @@ function Get-SmalV3MocContract {
             })
         }
     }
-    $selected = @('Get-MocLocation','Get-MocGroup','Get-MocContainer','Get-MocGalleryImage','Get-MocVirtualHardDisk','Get-MocVirtualMachine','Get-MocNetworkInterface','Get-MocVirtualNetwork','Get-MocVipPool','Get-MocNode','Get-MocAvailabilitySet','Get-MocPlacementGroup')
+    $selected = @('Get-MocLocation','Get-MocGroup','Get-MocContainer','Get-MocGalleryImage','Get-MocVirtualHardDisk','Get-MocVirtualMachine','Get-MocNetworkInterface','Get-MocVirtualNetwork','Get-MocVipPool','Get-MocNode','Get-MocAvailabilitySet','Get-MocPlacementGroup','Initialize-MocConfiguration','Initialize-MocEnvironment','Uninitialize-MocEnvironment','Repair-MocLogin','Get-CloudFqdn','ConvertTo-ArgString','Invoke-CommandLine')
     $wrappers = @(); $helpers = @(); $initialisation = @{ status = 'unavailable-static-parse'; complete = $false }
     if ($root.parseIssueCount -eq 0) {
         $definitions = @($root.ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] }, $true))
@@ -199,7 +201,7 @@ function Get-SmalV3MocContract {
             $f = $_
             @{ name = (ConvertTo-SmalPublicField $f.Name); startLine = $f.Extent.StartLineNumber; endLine = $f.Extent.EndLineNumber;
                declarationSha256 = (Get-SmalV3Hash ([Text.Encoding]::UTF8.GetBytes($f.Extent.Text)));
-               defaultExpressions = 'not-evaluated-or-exported'; dispatch = (Get-SmalV3Calls $f.Body) }
+               parameters = @(Get-SmalV5ParameterDeclarations $f); defaultExpressions = 'not-evaluated-or-exported'; dispatch = (Get-SmalV3Calls $f.Body) }
         })
         $seen = @($selected); $frontier = @($wrappers)
         for ($depth = 1; $depth -le 2; $depth++) {
@@ -234,14 +236,16 @@ function Invoke-SmalV3KnownRead([string]$Name, [hashtable]$Bindings) {
         'Get-AuthenticodeSignature' = @('Microsoft.PowerShell.Security'); 'Get-VMHost' = @('Hyper-V'); 'Get-VMHostNumaNode' = @('Hyper-V');
         'Get-VM' = @('Hyper-V'); 'Get-VMProcessor' = @('Hyper-V'); 'Get-VMMemory' = @('Hyper-V'); 'Get-VMHostSupportedVersion' = @('Hyper-V');
         'Get-VMNetworkAdapter' = @('Hyper-V'); 'Get-VMNetworkAdapterVlan' = @('Hyper-V');
-        'Get-CimInstance' = @('CimCmdlets'); 'Find-NetRoute' = @('NetTCPIP'); 'Get-NetRoute' = @('NetTCPIP');
+        'Get-CimInstance' = @('CimCmdlets'); 'Get-CimClass' = @('CimCmdlets'); 'Find-NetRoute' = @('NetTCPIP'); 'Get-NetRoute' = @('NetTCPIP');
         'Get-NetIPAddress' = @('NetTCPIP'); 'Get-NetNat' = @('NetNat'); 'Get-NetNatStaticMapping' = @('NetNat')
     }
     if (-not $allow.ContainsKey($Name)) { return @{ status = 'unavailable-reader-not-allowlisted'; complete = $false } }
     # Exact standard Windows readers only. Discovery may autoload their OS module, never Moc.
     $commands = @(Get-Command -Name $Name -Module $allow[$Name] -ErrorAction Stop)
     if ($commands.Count -ne 1 -or $allow[$Name] -notcontains $commands[0].ModuleName) { return @{ status = 'unavailable-reader-identity'; complete = $false } }
-    $command = $commands[0]; $metadata = Get-SmalImportedSignature $command
+    $command = $commands[0]
+    if ($Name -cin @('Find-NetRoute','Get-NetRoute','Get-NetIPAddress','Get-NetNat','Get-NetNatStaticMapping')) { return Invoke-SmalV5LiteralNetworkRead $command $Name $Bindings }
+    $metadata = Get-SmalImportedSignature $command
     if (-not $metadata.complete) { return @{ status = 'unavailable-reader-signature'; metadata = $metadata; complete = $false } }
     foreach ($key in $Bindings.Keys) {
         if (-not $command.Parameters.ContainsKey($key)) { return @{ status = 'unavailable-native-parameter'; reader = $Name; complete = $false } }
@@ -256,7 +260,7 @@ function Invoke-SmalV3KnownRead([string]$Name, [hashtable]$Bindings) {
     return @{ status = 'complete'; reader = $Name; module = [string]$command.ModuleName;
         moduleVersion = [string]$command.Module.Version; metadata = $metadata; value = $value }
 }
-function ConvertTo-SmalV3Properties($Object) {
+function ConvertTo-SmalV3Properties($Object, $Schema = $null) {
     $strings = @('Name','VMName','Id','VMId','State','Version','Path','ConfigurationLocation','SnapshotFileLocation','SmartPagingFilePath','CheckpointType','AutomaticStartAction','AutomaticStopAction','InterfaceAlias','IPAddress','DestinationPrefix','NextHop','SwitchName','SwitchId','MacAddress','OperationMode','AllowedVlanIdList','InternalIPInterfaceAddressPrefix','ExternalIPAddress','InternalIPAddress','Protocol','UniqueId','FriendlyName')
     return @($Object.PSObject.Properties | Select-Object -First 200 | ForEach-Object {
         $property = $_; $type = [string]$property.TypeNameOfValue
@@ -265,9 +269,15 @@ function ConvertTo-SmalV3Properties($Object) {
             try {
                 $units = @($Object.CimClass.CimClassProperties[$property.Name].Qualifiers | Where-Object Name -EQ 'Units')
                 if ($units.Count -eq 1) { $row.nativeUnits = ConvertTo-SmalPublicField ([string]$units[0].Value) }
+                elseif ($null -ne $Schema -and $Schema.status -ceq 'complete' -and $Schema.value.status -ceq 'complete') {
+                    $native=@($Schema.value.value)[0].CimClassProperties[$property.Name]
+                    $schemaUnits=@($native.Qualifiers | Where-Object Name -EQ 'Units')
+                    if ($schemaUnits.Count -eq 1) { $row.nativeUnits=ConvertTo-SmalPublicField ([string]$schemaUnits[0].Value) }
+                }
             } catch { $row.units = 'schema-unit-read-unavailable' }
         }
-        if ($type -match '^System\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Single|Double|Decimal)$') { $row.value = $property.Value; $row.valueStatus = 'native-scalar' }
+        $scalar=Get-SmalV5NativeScalar $property
+        if ($scalar.status -ceq 'native-scalar') { $row.value=$scalar.value; $row.valueStatus='native-scalar'; $row.runtimeType=$scalar.runtimeType }
         elseif ($strings -contains $property.Name) { $row.value = ConvertTo-SmalPublicField ([string]$property.Value); $row.valueStatus = 'public-string-projection' }
         elseif ($type -match '^System\.(Int16|UInt16|Int32|UInt32|Int64|UInt64)\[\]$') { $row.value = @($property.Value | Select-Object -First 256); $row.valueStatus = 'native-numeric-array-bounded'; $row.arrayComplete = (@($property.Value).Count -le 256) }
         $row
@@ -276,10 +286,15 @@ function ConvertTo-SmalV3Properties($Object) {
 function Get-SmalV3ReadProperties([string]$Name, [hashtable]$Bindings) {
     $read = Invoke-SmalV3KnownRead $Name $Bindings
     if ($read.status -cne 'complete') { return $read }
+    $schema=$null
+    if ($Name -ceq 'Get-CimInstance' -and $Bindings.ClassName -cin @('Win32_OperatingSystem','Win32_Processor')) {
+        $schema=Invoke-SmalOptionalRead 'exact-cim-schema-units' { Invoke-SmalV3KnownRead 'Get-CimClass' @{ClassName=$Bindings.ClassName} }
+    }
     return @{ status = 'complete'; reader = $read.reader; module = $read.module; moduleVersion = $read.moduleVersion; metadata = $read.metadata;
         objects = @($read.value | ForEach-Object { @{ nativeObjectType = (ConvertTo-SmalPublicField $_.GetType().FullName);
             nativePropertyCount = @($_.PSObject.Properties).Count; propertyDiscoveryComplete = (@($_.PSObject.Properties).Count -le 200);
-            properties = @(ConvertTo-SmalV3Properties $_) } });
+            properties = @(ConvertTo-SmalV3Properties $_ $schema) } });
+        schemaUnitsRead = $(if ($null -eq $schema) { @{status='not-applicable'} } else { @{status=[string]$schema.status; readerStatus=[string]$schema.value.status; phase=[string]$schema.phase; errorCategory=[string]$schema.errorCategory; errorType=$schema.errorType} });
         numericUnitsAndProfileSupportAdmitted = $false }
 }
 function Get-SmalV3Compute {
@@ -349,6 +364,145 @@ function Get-SmalV3OuterRoutes {
        nat = (Invoke-SmalOptionalRead 'outer-nat-properties' { Get-SmalV3ReadProperties 'Get-NetNat' @{} });
        mappings = (Invoke-SmalOptionalRead 'outer-nat-mapping-properties' { Get-SmalV3ReadProperties 'Get-NetNatStaticMapping' @{} });
        sshCallerCoverageAdmitted = $false }
+}
+
+# Exact compatibility changes and public dependency qualification. No Moc import/getter.
+function Invoke-SmalV5LiteralNetworkRead($Command, [string]$Name, [hashtable]$Bindings) {
+    $rules = @{
+        'Find-NetRoute' = @{ module='NetTCPIP'; required=@('RemoteIPAddress') }
+        'Get-NetRoute' = @{ module='NetTCPIP'; required=@('AddressFamily','DestinationPrefix') }
+        'Get-NetIPAddress' = @{ module='NetTCPIP'; required=@('AddressFamily') }
+        'Get-NetNat' = @{ module='NetNat'; required=@() }
+        'Get-NetNatStaticMapping' = @{ module='NetNat'; required=@() }
+    }
+    if (-not $rules.ContainsKey($Name)) { throw 'Reader not in exact network policy' }
+    $rule=$rules[$Name]
+    if ($Command.Name -cne $Name -or $Command.ModuleName -cne $rule.module -or [string]$Command.CommandType -cnotin @('Function','Cmdlet')) { throw 'Standard reader identity differs' }
+    if ($Bindings.Count -ne $rule.required.Count -or @($Bindings.Keys | Where-Object { $rule.required -notcontains $_ }).Count) { throw 'Nonliteral standard reader binding' }
+    foreach ($key in $Bindings.Keys) { if ($Bindings[$key] -isnot [string]) { throw 'Standard reader requires literal string arguments' } }
+    if ($Name -ceq 'Find-NetRoute' -and $Bindings.RemoteIPAddress -cnotin @('10.64.0.100','10.64.0.180')) { throw 'Unapproved route target' }
+    if ($Bindings.ContainsKey('AddressFamily') -and $Bindings.AddressFamily -cne 'IPv4') { throw 'Unapproved address family' }
+    if ($Bindings.ContainsKey('DestinationPrefix') -and $Bindings.DestinationPrefix -cne '0.0.0.0/0') { throw 'Unapproved route prefix' }
+    # Trusted standard CDXML function: let normal PowerShell binding obtain its dynamic
+    # parameters. This exception is unavailable to Moc or arbitrary modules/arguments.
+    $value=@(& $Command @Bindings -ErrorAction Stop)
+    if ($value.Count -gt 64) { throw 'Standard reader result count exceeded' }
+    @{ status='complete'; reader=$Name; module=[string]$Command.ModuleName; moduleVersion=[string]$Command.Module.Version;
+       bindingPolicy='exact-literal-standard-reader-normal-binding'; value=$value; networkWritePerformed=$false }
+}
+function Get-SmalV5NativeScalar($Property) {
+    $native=[string]$Property.TypeNameOfValue
+    if ($native -notmatch '^(System\.)?(Boolean|Bool|Byte|SByte|U?Int(8|16|32|64)|SInt(8|16|32|64)|Single|Double|Decimal|Real32|Real64)$') { return @{status='not-numeric'} }
+    $value=$Property.Value
+    if ($null -eq $value) { return @{status='native-null'} }
+    $runtime=$value.GetType().FullName
+    if ($runtime -notmatch '^System\.(Boolean|Byte|SByte|Int16|UInt16|Int32|UInt32|Int64|UInt64|Single|Double|Decimal)$') { return @{status='not-native-numeric';runtimeType=(ConvertTo-SmalPublicField $runtime)} }
+    if (($value -is [double] -and ([double]::IsNaN($value) -or [double]::IsInfinity($value))) -or ($value -is [single] -and ([single]::IsNaN($value) -or [single]::IsInfinity($value)))) { return @{status='unavailable-nonfinite-native-number'} }
+    @{status='native-scalar';value=$value;runtimeType=(ConvertTo-SmalPublicField $runtime)}
+}
+function Get-SmalV5ParameterDeclarations($Function) {
+    $parameters=@($Function.Parameters | Where-Object { $null -ne $_ })
+    if (-not $parameters.Count -and $null -ne $Function.Body.ParamBlock) { $parameters=@($Function.Body.ParamBlock.Parameters | Where-Object { $null -ne $_ }) }
+    @($parameters | ForEach-Object {
+        @{name=(ConvertTo-SmalPublicField $_.Name.VariablePath.UserPath);
+          types=@($_.Attributes | Where-Object {$_ -is [Management.Automation.Language.TypeConstraintAst]} | ForEach-Object {ConvertTo-SmalPublicField $_.TypeName.FullName});
+          hasDefault=($null -ne $_.DefaultValue); defaultValue='not-evaluated-or-exported';
+          attributes=@($_.Attributes | Where-Object {$_ -is [Management.Automation.Language.AttributeAst]} | ForEach-Object {
+              @{type=(ConvertTo-SmalPublicField $_.TypeName.FullName); namedArguments=@($_.NamedArguments | ForEach-Object {
+                  @{name=(ConvertTo-SmalPublicField $_.ArgumentName); declaration=(Get-SmalV3Literal $_.Argument)}
+              })}
+          })}
+    })
+}
+function Get-SmalV5PublicUnit([string]$Path) {
+    if ([IO.Path]::GetExtension($Path) -ieq '.dll') {
+        # Exact declared public module root only. No Assembly.Load or binary execution.
+        $Path=Assert-SmalV4PublicPath $Path;$bytes=Read-SmalV4PublicBytes $Path
+        $signature=Invoke-SmalOptionalRead 'exact-public-binary-authenticode' {
+            $null=Assert-SmalV4PublicPath $Path
+            $read=Invoke-SmalV3KnownRead 'Get-AuthenticodeSignature' @{FilePath=$Path}
+            $null=Assert-SmalV4PublicPath $Path
+            if ($read.status -cne 'complete' -or @($read.value).Count -ne 1) {return @{status='unavailable-signature'}}
+            $signed=@($read.value)[0]
+            @{status=[string]$signed.Status;signer=$(if($null -ne $signed.SignerCertificate){@{subject=(ConvertTo-SmalPublicField $signed.SignerCertificate.Subject);issuer=(ConvertTo-SmalPublicField $signed.SignerCertificate.Issuer);thumbprint=[string]$signed.SignerCertificate.Thumbprint}}else{@{status='no-signer-reported'}});moduleTrustAdmitted=$false}
+        }
+        return @{file=@{path=(ConvertTo-SmalPublicField $Path);sha256=(Get-SmalV3Hash $bytes);bytes=$bytes.Length;signature=$signature};status='public-binary-metadata-only';binaryExecuted=$false;initialisation='not-executed-or-inspected';dependencyClosureQualified=$false}
+    }
+    if ([IO.Path]::GetExtension($Path) -cnotin @('.psd1','.psm1','.ps1')) { throw 'Only exact public PowerShell source files allowed' }
+    $file=Get-SmalV3FileContract $Path
+    $ast=$file.ast
+    $functions=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
+    $selected=@('Initialize-MocConfiguration','Initialize-MocEnvironment','Uninitialize-MocEnvironment','Repair-MocLogin','Get-CloudFqdn','ConvertTo-ArgString','Invoke-CommandLine','New-ModuleEventLog','Write-Status','Write-StatusWithProgress','Trace-Cmdlet','Trace-CmdletError','Get-TraceConfigDetails')
+    $rows=@($functions | Where-Object {$selected -contains $_.Name -or $_.Name -like 'Get-Moc*'} | Select-Object -First 64 | ForEach-Object {
+        @{name=(ConvertTo-SmalPublicField $_.Name); startLine=$_.Extent.StartLineNumber; endLine=$_.Extent.EndLineNumber;
+          declarationSha256=(Get-SmalV3Hash ([Text.Encoding]::UTF8.GetBytes($_.Extent.Text)));
+          parameters=@(Get-SmalV5ParameterDeclarations $_); dispatch=(Get-SmalV3Calls $_.Body)}
+    })
+    $tables=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.HashtableAst]},$true))
+    $declarations=@()
+    if ([IO.Path]::GetExtension($Path) -ceq '.psd1' -and $tables.Count) {
+        $allowed=@('RootModule','ModuleToProcess','ModuleVersion','GUID','RequiredModules','NestedModules','RequiredAssemblies','ScriptsToProcess','TypesToProcess','FormatsToProcess')
+        $declarations=@($tables[0].KeyValuePairs | ForEach-Object {
+            if ($_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and $allowed -contains $_.Item1.Value) {
+                @{name=$_.Item1.Value;declaration=(Get-SmalV3Literal $_.Item2)}
+            }
+        })
+    }
+    $initialisation=Get-SmalV3Calls $ast; $file.Remove('ast')
+    @{file=$file;declarations=$declarations;initialisation=$initialisation;selectedDefinitions=$rows;
+      definitionInventoryComplete=($functions.Count -le 64); dependencyClosureQualified=$false; effectsClassification='human-code-review-required-not-classified-by-verb'}
+}
+# Lexical candidates only. Never use native module analysis before bounded manifest reads.
+function Get-SmalV5Dependencies {
+    $base='C:\Program Files\WindowsPowerShell\Modules\Moc\1.2.161'
+    $common=Invoke-SmalOptionalRead 'exact-moc-common-public-source' {Get-SmalV5PublicUnit ($base+'\Common.psm1')}
+    $roots=@($env:PSModulePath.Split([IO.Path]::PathSeparator) | Where-Object {-not [string]::IsNullOrWhiteSpace($_)} | Select-Object -Unique)
+    if ($roots.Count -gt 8) {return @{status='unavailable-public-path-root-bound';observedRootCount=$roots.Count;importAdmitted=$false;getterAdmitted=$false}}
+    $dependencies=@(foreach($expected in @(
+        @{name='DownloadSdk';version='1.1.149';guid='1cc49c8b-6e57-4594-8e07-649656b32d85'},
+        @{name='TraceProvider';version='1.0.156';guid='09b2e7fc-61dd-41da-af90-2bee7506fb70'})) {
+        $expectedModule=$expected
+        Invoke-SmalOptionalRead 'exact-declared-public-dependency' {
+            $candidates=@();$seen=@{}
+            foreach($modulePath in $roots) {
+                if (-not [IO.Path]::IsPathRooted($modulePath)) {continue}
+                # Construct two conventional exact paths. No directory recursion/content analysis.
+                $moduleBase=[IO.Path]::Combine($modulePath,$expectedModule.name)
+                foreach($directory in @([IO.Path]::Combine($moduleBase,$expectedModule.version),$moduleBase)) {
+                    $candidate=[IO.Path]::GetFullPath([IO.Path]::Combine($directory,$expectedModule.name+'.psd1'))
+                    if ($seen.ContainsKey($candidate)) {continue};$seen[$candidate]=$true
+                    $probe=Invoke-SmalOptionalRead 'guarded-exact-dependency-manifest' {
+                        # Guard at the dependency entry, before the public reader can open content.
+                        $checked=Assert-SmalV4PublicPath $candidate
+                        Get-SmalV5PublicUnit $checked
+                    }
+                    $candidates+=@{path=(ConvertTo-SmalPublicField $candidate);read=$probe}
+                }
+            }
+            $matches=@(foreach($candidate in $candidates) {
+                if ($candidate.read.status -cne 'complete') {continue}
+                $unit=$candidate.read.value;$fields=@{}
+                if ($unit.file.parseStatus -cne 'parsed-not-executed') {continue}
+                foreach($declaration in @($unit.declarations)) {
+                    if ($declaration.declaration.status -ceq 'literal' -and $declaration.declaration.value.status -ceq 'available') {$fields[$declaration.name]=$declaration.declaration.value.value}
+                }
+                if ($fields.ModuleVersion -ceq $expectedModule.version -and $fields.GUID -ieq $expectedModule.guid -and -not [string]::IsNullOrEmpty($fields.RootModule)) {
+                    @{manifest=$unit;path=$candidate.path.value;rootDeclaration=$fields.RootModule}
+                }
+            })
+            if ($matches.Count -ne 1) {return @{status='unavailable-exact-dependency-identity';name=$expectedModule.name;matches=$matches.Count;candidates=$candidates}}
+            $selected=$matches[0];$directory=[IO.Path]::GetDirectoryName($selected.path)
+            $root=[IO.Path]::GetFullPath([IO.Path]::Combine($directory,$selected.rootDeclaration))
+            $prefix=$directory.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+            if (-not $root.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) {throw 'Dependency root escapes guarded public module directory'}
+            $root=Assert-SmalV4PublicPath $root
+            @{status='static-public-dependency-only';name=$expectedModule.name;version=$expectedModule.version;guid=$expectedModule.guid;
+              manifest=$selected.manifest;root=(Get-SmalV5PublicUnit $root);moduleImported=$false;candidates=$candidates}
+        }
+    })
+    @{status='public-dependency-qualification-input';mocRootContract='separate hash-pinned mocPublicContract field';common=$common;dependencies=$dependencies;
+      discoveryPolicy='lexical-path-then-guarded-same-parse-identity';maximumRoots=8;maximumCandidateManifestsPerDependency=16;
+      importAdmitted=$false;getterAdmitted=$false;accountResetPerformed=$false;clientAuthSetupPerformed=$false;infrastructureMutationPerformed=$false}
 }
 
 '@
@@ -538,6 +692,7 @@ $nodes = @(foreach ($target in $targets) {
                     @{ status = 'optional-read-projections'; readinessFactsComplete = $false;
                        mocMetadata = @{ status = 'not-repeated-use-preserved-v2-receipt'; readinessFactsComplete = $false };
                        mocPublicContract = (Invoke-SmalOptionalRead 'exact-moc-public-contract' { Get-SmalV3MocContract });
+                       dependencyQualification = (Invoke-SmalOptionalRead 'exact-moc-public-dependencies' { Get-SmalV5Dependencies });
                        computeProperties = (Invoke-SmalOptionalRead 'guest-compute-property-discovery' { Get-SmalV3Compute });
                        lifecycleCommandMetadata = (Invoke-SmalOptionalRead 'guest-lifecycle-metadata-only' { Get-SmalV3LifecycleMetadata });
                        nestedVmDisks = (Invoke-SmalOptionalRead 'nested-vm-disk-metadata' {
