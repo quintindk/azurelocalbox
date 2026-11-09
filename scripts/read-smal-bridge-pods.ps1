@@ -3,6 +3,21 @@ param([ValidateSet('Auto','Prepare','Read')][string]$Mode = 'Auto')
 $ErrorActionPreference = 'Stop'
 $result = @{ status = 'not-requested'; hostName = $env:COMPUTERNAME; atUtc = [datetime]::UtcNow.ToString('o'); namespace = 'hybridaks-operator-system'; apiRequests = 0; credentialsReturned = $false }
 $certificate = $null; $request = $null; $response = $null; $memory = $null
+$pinCompiled = $false
+function Get-SafeExceptionChain([Exception]$Exception) {
+    # Explicit scalar projection only. Never serialise exception/response objects.
+    for ($depth = 0; $null -ne $Exception -and $depth -lt 4; $depth++) {
+        $entry = @{ type = $Exception.GetType().FullName; hResult = [int]$Exception.HResult }
+        if ($Exception -is [ComponentModel.Win32Exception]) { $entry.nativeErrorCode = [int]$Exception.NativeErrorCode }
+        if ($Exception -is [Net.WebException]) {
+            $entry.webExceptionStatusCode = [int]$Exception.Status
+            $entry.webExceptionStatus = [Enum]::GetName([Net.WebExceptionStatus], $Exception.Status)
+            if ($Exception.Response -is [Net.HttpWebResponse]) { $entry.httpStatus = [int]$Exception.Response.StatusCode }
+        }
+        $entry
+        $Exception = $Exception.InnerException
+    }
+}
 $phase = 'host-window-check'
 try {
 if ($env:COMPUTERNAME -ine 'LocalBox-Client' -or $env:OS -cne 'Windows_NT') { throw 'Exact LocalBox-Client required' }
@@ -90,7 +105,17 @@ using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 public static class SmalBridgeLeafPin20261109 {
-    public static readonly RemoteCertificateValidationCallback Callback = new RemoteCertificateValidationCallback(Verify);
+    public static readonly RemoteCertificateValidationCallback Callback = new RemoteCertificateValidationCallback(Observe);
+    public static int CallbackInvocations;
+    public static volatile bool ExactLeafMatched;
+    public static int NumericSslPolicyErrors;
+    private static bool Observe(object sender, X509Certificate peer, X509Chain chain, SslPolicyErrors errors) {
+        System.Threading.Interlocked.Increment(ref CallbackInvocations);
+        System.Threading.Interlocked.Exchange(ref NumericSslPolicyErrors, (int)errors);
+        bool matched = Verify(sender, peer, chain, errors);
+        if (matched) ExactLeafMatched = true;
+        return matched;
+    }
     public static bool Verify(object sender, X509Certificate peer, X509Chain chain, SslPolicyErrors errors) {
         if (peer == null) return false;
         using (var sha = SHA256.Create()) {
@@ -100,6 +125,7 @@ public static class SmalBridgeLeafPin20261109 {
     }
 }
 '@
+    $pinCompiled = $true
     $phase = 'leaf-pin-clr-delegate-bind'
     $request.ServerCertificateValidationCallback = [SmalBridgeLeafPin20261109]::Callback
     # One-shot local marker is created before the only HTTP request. Never reset it.
@@ -143,6 +169,7 @@ public static class SmalBridgeLeafPin20261109 {
     $result.failurePhase = $phase
     $result.sourceLine = [int]$_.InvocationInfo.ScriptLineNumber
     $result.errorCategory = $_.CategoryInfo.Category.ToString()
+    $result.exceptionChain = @(Get-SafeExceptionChain $_.Exception)
     # Never emit messages, source text or an arbitrary FullyQualifiedErrorId.
     $result.safeErrorId = switch -Exact ($_.FullyQualifiedErrorId) {
         'MethodInvocationException' { 'MethodInvocationException'; break }
@@ -153,6 +180,13 @@ public static class SmalBridgeLeafPin20261109 {
     }
 }
 finally {
+    if ($pinCompiled) {
+        $result.leafPin = @{ invoked = [SmalBridgeLeafPin20261109]::CallbackInvocations -gt 0
+            invocationCount = [SmalBridgeLeafPin20261109]::CallbackInvocations
+            exactLeafMatched = [SmalBridgeLeafPin20261109]::ExactLeafMatched
+            numericSslPolicyErrors = $null }
+        if ($result.leafPin.invoked) { $result.leafPin.numericSslPolicyErrors = [SmalBridgeLeafPin20261109]::NumericSslPolicyErrors }
+    }
     if ($response) { $response.Close() }; if ($request) { $request.Abort() }; if ($memory) { $memory.Dispose() }; if ($certificate) { $certificate.Dispose() }
     $config = $null
 }
