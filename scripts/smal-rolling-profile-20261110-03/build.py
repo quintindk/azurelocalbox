@@ -220,7 +220,7 @@ foreach($v in $snapshot.volumes){
  Assert-Compute ($null -ne $b -and $v.health -ceq 'Healthy' -and $v.free -ge $b.freeFloorBytes -and ($b.maximumVhdBytes+$b.runtimeBytes+$b.metadataBytes+$b.freeFloorBytes) -le $v.size) 'Unchanged volume growth/runtime reserve failed'
 }
 $c=$snapshot.hostCapacity
-Assert-Compute ($c.logicalProcessors -eq 64 -and $c.physicalCores -eq 32 -and $c.memoryBytes -ge 500GB -and $c.freeMemoryBytes -ge 32GB -and $c.numa.Count -gt 0 -and ($c.numa|Measure-Object logicalProcessors -Sum).Sum -eq 64 -and (Get-VMHost).NumaSpanningEnabled) 'Actual E64/NUMA/outer reserve failed'
+Assert-Compute ($c.logicalProcessors -eq 64 -and $c.physicalCores -eq 32 -and $c.memoryBytes -ge 500GB -and $c.freeMemoryBytes -ge 32GB -and $c.numa.Count -gt 0 -and ($c.numa|ForEach-Object {[int]$_.logicalProcessors}|Measure-Object -Sum).Sum -eq 64 -and (Get-VMHost).NumaSpanningEnabled) 'Actual E64/NUMA/outer reserve failed'
 Assert-Compute ($snapshot.clusterHealth.physicalFreeBytes -ge ($plan.admission.requiredPhysicalFreeBytes+$plan.admission.repairReserveBytes)) 'Unchanged physical S2D reserve failed'
 """
     if selected:
