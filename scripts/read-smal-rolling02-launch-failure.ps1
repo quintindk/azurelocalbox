@@ -28,7 +28,7 @@ function Read-LaunchJson($name){
  }catch{$r.status='failed-read-only';$r.errorType=$_.Exception.GetType().FullName}
  $r
 }
-$files=@('operation.json','request-drain-LB-NODE02.json','worker-drain-LB-NODE02.state.json','launch-drain-LB-NODE02-returned.json','worker-drain-LB-NODE02-event-1.json','drain-proof-LB-NODE02.json'|ForEach-Object {Read-LaunchJson $_})
+$files=@('operation.json','request-drain-LB-NODE02.json','worker-drain-LB-NODE02.state.json','launch-drain-LB-NODE02-returned.json','worker-drain-LB-NODE02-event-1.json','worker-drain-LB-NODE02-event-2.json','worker-drain-LB-NODE02-event-3.json','worker-drain-LB-NODE02-event-4.json','resume-invocation-drain-LB-NODE02-01.json','resume-returned-drain-LB-NODE02-01.json','drain-proof-LB-NODE02.json'|ForEach-Object {Read-LaunchJson $_})
 $worker=@{present=$false;expectedSha256=$expected}
 try{
  if($safe -and (Test-Path -LiteralPath $path -PathType Leaf)){
@@ -45,9 +45,9 @@ $policy=@(Get-ExecutionPolicy -List|ForEach-Object {@{scope=$_.Scope.ToString();
 $scan=@{complete=$false};$rows=@()
 try{
  if([DateTimeOffset]::UtcNow -ge $end){throw 'Read end reached'}
- $all=@(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='sshd.exe' OR ProcessId=10264" -OperationTimeoutSec 5 -ErrorAction Stop)
+  $all=@(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='sshd.exe' OR ProcessId=10264 OR ProcessId=3448" -OperationTimeoutSec 5 -ErrorAction Stop)
   $scan.count=$all.Count;$scan.unreadablePowerShellCommandLines=@($all|Where-Object {$_.Name -ieq 'powershell.exe' -and -not $_.CommandLine}).Count;$scan.complete=$all.Count -le 128 -and $scan.unreadablePowerShellCommandLines -eq 0;$all=@($all|Select-Object -First 128)
- $wanted=@(10264,$PID)+@($files|Where-Object name -EQ 'request-drain-LB-NODE02.json'|ForEach-Object {$_.fields.pid})
+  $wanted=@(10264,3448,$PID)+@($files|Where-Object name -EQ 'request-drain-LB-NODE02.json'|ForEach-Object {$_.fields.pid})
  $wanted+=@($all|Where-Object {$_.CommandLine -match ('(?i)(?:^|\s)-File\s+"?'+[regex]::Escape($path)+'"?\s*$')}|ForEach-Object {$_.ProcessId})
  for($i=0;$i -lt 5;$i++){$wanted+=@($all|Where-Object {$_.ProcessId -in $wanted}|ForEach-Object {$_.ParentProcessId});$wanted=@($wanted|Select-Object -Unique)}
  foreach($p in @($all|Where-Object {$_.ProcessId -in $wanted})){$rows+=@{pid=$p.ProcessId;parentPid=$p.ParentProcessId;name=$p.Name;startUtc=$p.CreationDate.ToUniversalTime().ToString('o');commandLineAvailable=($null -ne $p.CommandLine);commandLineSha256=$(if($p.CommandLine){Digest-LaunchBytes ([Text.Encoding]::UTF8.GetBytes($p.CommandLine))})}}
