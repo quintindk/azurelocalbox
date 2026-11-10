@@ -413,6 +413,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
+                     'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,

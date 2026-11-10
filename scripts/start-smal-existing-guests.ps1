@@ -20,6 +20,17 @@ try {
     if (Test-Path -LiteralPath $capacityRoot) {
         throw 'Retained remote R2 history requires reviewed source and exact settlement before guest startup. No helper, grant or marker is changed.'
     }
+    $profileRoot='C:\ProgramData\AzureLocalBox\FoundationProfile-20261109-01'
+    if (Test-Path -LiteralPath $profileRoot) {
+        $operation=Get-Content (Join-Path $profileRoot 'operation.json') -Raw|ConvertFrom-Json
+        $closed=Get-Content (Join-Path $profileRoot 'completion.json') -Raw|ConvertFrom-Json
+        if ($operation.operationId -cne 'smal-foundation-profile-20261109-01' -or $operation.active -ne $false -or $closed.planSha256 -cne $operation.planSha256 -or $closed.sourceCommit -cne $operation.sourceCommit -or $closed.allHealthyAndOk -ne $true -or $closed.noActiveStorageJobs -ne $true -or $closed.allOriginalOperationsReconciled -ne $true) { throw 'Rolling profile operation is not closed; no normal startup' }
+        foreach($file in @(Get-ChildItem $profileRoot -Filter 'worker-*.state.json' -File)) {
+            $s=Get-Content $file.FullName -Raw|ConvertFrom-Json;$p=Get-Process -Id $s.pid -ErrorAction SilentlyContinue
+            if ($s.phase -cne 'returned' -or ($p -and $p.StartTime.ToUniversalTime().ToString('o') -ceq $s.processStartedUtc)) { throw 'Original rolling worker unresolved; no normal startup' }
+        }
+        foreach($vm in @(Get-VM)) { $p=$closed.finalProfiles.PSObject.Properties[$vm.Name].Value;if ($null -eq $p -or $p.cpu -ne $vm.ProcessorCount -or $p.memory -ne $vm.MemoryStartup) { throw 'Completed rolling profiles drifted' } }
+    }
     $targets = @(
         @{ name = 'LB-DC01'; id = 'f94c71f1-6854-48b9-a9f1-8238c99366d0' },
         @{ name = 'LB-NODE01'; id = '3adff629-2f67-449b-ab32-8a8748c46f34' },

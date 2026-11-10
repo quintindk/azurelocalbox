@@ -364,6 +364,8 @@ def completed(stage, plan_sha):
 
 
 def execute(stage, key, plan, expected_sha, evidence=None):
+    if stage not in (*INVENTORY, "inspect", "verify"):
+        raise ValueError("Legacy multi-effect capacity dispatch retired. Use reviewed R2 one-effect/interlocked executor; no mutation requested.")
     if stage not in INVENTORY:
         validate_plan(plan, approved=True)
     require(expected_sha == digest(plan), "Parent reviewed plan differs")

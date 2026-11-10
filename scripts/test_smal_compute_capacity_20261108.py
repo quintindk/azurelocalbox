@@ -153,24 +153,27 @@ class CapacityTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError): H["verify_cloud"](row, self.plan)
 
     def test_receipt_replay_refused_before_cloud_or_transport(self):
+        pending = json.loads((H["OUT"] / "plan.pending.json").read_text())
         with tempfile.TemporaryDirectory(dir="/tmp/opencode") as d:
             out = Path(d); (out / "operation-fixed.json").write_text("{}")
             azure = Mock(); transport = Mock()
             with patch.dict(G, OUT=out, source_guard=Mock(return_value="commit"), validate_plan=Mock(), get_cloud=azure, private=transport):
                 with self.assertRaisesRegex(ValueError, "receipt"):
-                    H["execute"]("shutdown", "fixed", self.plan, H["digest"](self.plan))
+                    H["execute"]("inventory", "fixed", pending, H["digest"](pending))
             azure.assert_not_called(); transport.assert_not_called()
 
-    def test_uncertain_guest_effect_retains_pending_receipt_and_never_retries(self):
-        row = {"projection": self.plan["baseline"]["cloud"], "size": self.plan["beforeSize"], "power": "PowerState/running"}
+    def test_retired_legacy_dispatch_refuses_before_source_cloud_transport_or_claim(self):
         with tempfile.TemporaryDirectory(dir="/tmp/opencode") as d:
-            transport = Mock(side_effect=subprocess.TimeoutExpired("approved-transport", 90))
-            with patch.dict(G, OUT=Path(d), source_guard=Mock(return_value="commit"), validate_plan=Mock(), get_cloud=Mock(return_value=row), private=transport):
-                with self.assertRaises(subprocess.TimeoutExpired):
+            out = Path(d); receipt = out / "operation-fixed.json"
+            original = b'{"status":"uncertain-inspect-before-continuation","mutationRequested":true}\n'
+            receipt.write_bytes(original)
+            source = Mock(); azure = Mock(); transport = Mock(); claim = Mock()
+            with patch.dict(G, OUT=out, source_guard=source, get_cloud=azure, private=transport, claim=claim):
+                with self.assertRaisesRegex(ValueError, "Legacy multi-effect capacity dispatch retired"):
                     H["execute"]("shutdown", "fixed", self.plan, H["digest"](self.plan))
-            receipt = json.loads((Path(d) / "operation-fixed.json").read_text())
-            self.assertEqual(receipt["status"], "uncertain-inspect-before-continuation")
-            self.assertTrue(receipt["mutationRequested"]); self.assertEqual(transport.call_count, 1)
+            source.assert_not_called(); azure.assert_not_called(); transport.assert_not_called(); claim.assert_not_called()
+            self.assertEqual(receipt.read_bytes(), original)
+            self.assertEqual(list(out.iterdir()), [receipt])
 
     def test_generated_stage_digest_and_scope(self):
         files = H["render"](self.plan)
