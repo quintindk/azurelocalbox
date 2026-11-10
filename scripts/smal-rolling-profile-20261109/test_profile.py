@@ -11,9 +11,34 @@ import build
 import plan
 
 
+def fixture_contract():
+    commands={}
+    for name in plan.MOC_COMMANDS:
+        commands[name]={'name':name,'commandType':'Function','moduleName':'FixtureMoc','moduleVersion':'1.0','modulePath':'fixture-only',
+            'moduleSha256':'a'*64,'definitionSha256':'b'*64,'contractSha256':'c'*64,
+            'parameterSets':[{'name':'fixture','parameters':[] if name=='Get-MocPhysicalNode' else [{'name':'NodeName','type':'System.String','mandatory':True}]}]}
+    return {'nodes':{node:{'qualified':True,'observerNode':node,'commands':copy.deepcopy(commands),'membershipObserved':True,'members':sorted(plan.ORDER)} for node in plan.ORDER}}
+
+
+def fixture_stage(stage):
+    now=datetime(2026,11,10,10,10,tzinfo=timezone.utc)
+    p=plan.candidate();p['baseline']={'sealed':True};p['admission']={'sealed':True};p['mocContract']=fixture_contract()
+    p['transitionContract']['deviceOwners']={str(i):plan.ORDER[i//8] for i in range(24)}
+    p['executionApproval']={'parentGo':True,'originalOperationsReconciled':True,'expiresAt':(now+timedelta(minutes=10)).isoformat()}
+    row=p['transitionContract']['stages'][stage]
+    proof={'originalOperationsReconciled':True,'retainedRootsAbsent':True,'exactSourcePublished':True,'localWindowsAuthorityVerified':True,
+        'exactStorageIdentities':True,'volumeGrowthBudgetsFit':True,'supportedProfilesVerified':True,'allHealthyNoJobs':True,
+        'selectedEightDeviceMaintenanceVerified':True,'selectedMaintenanceContextVerified':True,'twoHealthySurvivors':True,
+        'infrastructureMigrationAdmitted':True,'mocContractQualified':True,'mocMembers':row['beforeMocMembers'],
+        'selectedNodeUpObserved':True,'previousStage':row['previousStage'],'previousEffectIndependentlySettled':True,
+        'beforeProfiles':row['beforeProfiles'],'beforeStates':row['beforeStates'],'observedAt':now.isoformat(),
+        'outerMemoryBytes':549750304768,'physicalFreeBytes':300*plan.GIB}
+    return p,proof,now
+
+
 class ProfileChecks(unittest.TestCase):
     def test_exact_order_and_no_node01_memory_write(self):
-        rows=plan.stages();self.assertEqual(len(rows),19)
+        rows=plan.stages();self.assertEqual(len(rows),25)
         self.assertEqual(next(iter(rows)),'drain-LB-NODE02')
         self.assertNotIn('memory-LB-NODE01',rows)
         self.assertEqual(rows['complete']['beforeProfiles']['LB-NODE02']['cpu'],20)
@@ -31,11 +56,7 @@ class ProfileChecks(unittest.TestCase):
         with self.assertRaises(ValueError):plan.execution_preflight(plan.candidate(),'drain-LB-NODE02',{})
 
     def test_runtime_health_original_state_and_permission_gates(self):
-        p=plan.candidate();now=datetime.now(timezone.utc);p['baseline']={'sealed':True};p['admission']={'sealed':True}
-        p['transitionContract']['deviceOwners']={str(i):plan.ORDER[i//8] for i in range(24)}
-        p['executionApproval']={'parentGo':True,'expiresAt':(now+timedelta(minutes=10)).isoformat()}
-        row=p['transitionContract']['stages']['drain-LB-NODE02']
-        proof={'originalOperationsReconciled':True,'retainedRootsAbsent':True,'exactSourcePublished':True,'localWindowsAuthorityVerified':True,'exactStorageIdentities':True,'volumeGrowthBudgetsFit':True,'supportedProfilesVerified':True,'allHealthyNoJobs':True,'beforeProfiles':row['beforeProfiles'],'beforeStates':row['beforeStates'],'observedAt':now.isoformat(),'outerMemoryBytes':549750304768}
+        p,proof,now=fixture_stage('drain-LB-NODE02')
         self.assertTrue(plan.execution_preflight(p,'drain-LB-NODE02',proof,now)['transportAuthoritySeparate'])
         for key in ('originalOperationsReconciled','localWindowsAuthorityVerified','allHealthyNoJobs','volumeGrowthBudgetsFit'):
             q=copy.deepcopy(proof);q[key]=False
@@ -70,7 +91,7 @@ class ProfileChecks(unittest.TestCase):
         self.assertIn("$mode='observe'",observation['dispatcher'])
         with self.assertRaises((ValueError,KeyError)):build.capsule(original,'cpu-LB-NODE02','a'*40,mode='dispatch')
 
-    def test_exact_reviewed_rendered_hashes(self):
+    def test_exact_proposed_delta_rendered_hashes(self):
         files,_=build.render()
         self.assertEqual({name:hashlib.sha256(text.encode()).hexdigest() for name,text in files.items()},build.RENDER_PINS)
 

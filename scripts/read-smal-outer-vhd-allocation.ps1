@@ -4,9 +4,9 @@
 # https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_standard_info
 # https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_id_info
 # https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_compression_info
-$ErrorActionPreference='Stop';$phase='preimage';$rows=@()
+$ErrorActionPreference='Stop';$phase='preimage';$rows=@();$script:configurationMismatch=$null
 $baselineSha256='435a0ee69c0388fbdb955db33ee6b12627eadd28afda7d685e133cd7b3960507'
-$deadline=[DateTimeOffset]::Parse('2026-11-10T13:00:00+02:00')
+$deadline=[DateTimeOffset]::Parse('2026-11-10T14:00:00+02:00')
 $sealedSha256='587e5120ffb6242c2958567c72cb627bde45a93f6b35bb3e0fb5a7171b32f793'
 $sealedGzip=@(
 'H4sIAAAAAAAC/+1bW2/bOBP9L34OF7xf8vJB12KBTVM0/dIC6z5QEhULtS2vLCftFvnvO7Tj1Gm9QZvQjbJogACSKM0cHg3Hc0jq86iwSzdt5u5sYqmQo+MRZ8Ji56QpMdO6LqrCCFEVjMG1glBJlbNVRbWtK6sqqYUjjJWVKpiRWGA1OhpdrNyyX46O//w8mtuZA6N/xChNMIG2poLT2vBSkZogeJwjrguDrIFTTZkujWFSVhjuLRer0TE9Gs3crO0+jY45NdxIRY08GlWfwHRTntw01Xa6dODZzV1n+6adrx+8dN1yfTwi9DdvcWH7CZydH4/H0d+rzv3RlnYatx/H4xdrzOPx1F9Bmx4giqkkmGqEyXh804fbAw+wndfNxWrj0dvaeA5mfzm3'
@@ -19,22 +19,40 @@ $sealedGzip=@(
 'WBlKBMwIrm16OzPX28r29kXXXvWTbZApooyWhmi4sYYUl0/btrtppAQ2e2ggUGN8/Q/CUgpTBUAAAA=='
 ) -join ''
 function Check-Window {if([DateTimeOffset]::UtcNow -ge $deadline){throw 'Fixed metadata read window closed'}}
-function Assert-Fields($Actual,$Expected) {
-    if($null -eq $Expected){if($null -ne $Actual){throw 'Sealed configuration differs'};return}
+function Guard-Value($Value) {
+    if($null -eq $Value){return @{type='null';status='null';value=$null}}
+    $result=@{type=$Value.GetType().FullName;status='type-only'}
+    if($Value -is [array]){$result.count=$Value.Count;return $result}
+    if($Value -is [Collections.IDictionary]){$result.count=$Value.Count;return $result}
+    if($Value -is [bool] -or $Value -is [byte] -or $Value -is [int16] -or $Value -is [uint16] -or $Value -is [int32] -or $Value -is [uint32] -or $Value -is [int64] -or $Value -is [uint64] -or $Value -is [decimal] -or $Value -is [double] -or $Value -is [single]){$result.status='management-scalar';$result.value=$Value;return $result}
+    if($Value -is [string] -or $Value -is [guid] -or $Value -is [version] -or $Value -is [enum]){
+        $text=[string]$Value
+        if($text.Length -le 512 -and $text -notmatch '-----BEGIN|\beyJ[A-Za-z0-9_-]{15,}\.|\b(?:ssh-rsa|ssh-ed25519|ecdsa-sha2-[A-Za-z0-9-]+)\s|[\r\n]|://|(?i:password|credential|secret|token|keyprotector)'){$result.status='management-scalar';$result.value=$text}else{$result.status='withheld'}
+    }
+    $result
+}
+function Fail-Field([string]$Path,[string]$Reason,$Actual,$Expected) {
+    $script:configurationMismatch=@{fieldPath=$Path;reason=$Reason;actual=(Guard-Value $Actual);expected=(Guard-Value $Expected)}
+    throw 'Sealed configuration differs; bounded field diagnostic retained'
+}
+function Assert-Fields($Actual,$Expected,[string]$Path='configuration') {
+    if($null -eq $Expected){if($null -ne $Actual){Fail-Field $Path 'expected-null' $Actual $Expected};return}
     if($Expected -is [array]){
-        if($Actual -isnot [array] -or $Actual.Count -ne $Expected.Count){throw 'Sealed array differs'}
-        for($i=0;$i -lt $Expected.Count;$i++){Assert-Fields $Actual[$i] $Expected[$i]};return
+        if($Actual -isnot [array] -or $Actual.Count -ne $Expected.Count){Fail-Field $Path 'array-type-or-count-mismatch' $Actual $Expected}
+        for($i=0;$i -lt $Expected.Count;$i++){Assert-Fields $Actual[$i] $Expected[$i] ($Path+'['+$i+']')};return
     }
     if($Expected -is [pscustomobject]){
-        foreach($p in $Expected.PSObject.Properties){if(-not $Actual.ContainsKey($p.Name)){throw 'Sealed field missing'};Assert-Fields $Actual[$p.Name] $p.Value};return
+        if($Actual -isnot [Collections.IDictionary]){Fail-Field $Path 'object-type-mismatch' $Actual $Expected}
+        foreach($p in $Expected.PSObject.Properties){$field=$Path+'.'+$p.Name;if(-not $Actual.ContainsKey($p.Name)){Fail-Field $field 'missing-field' $null $p.Value};Assert-Fields $Actual[$p.Name] $p.Value $field};return
     }
-    if([string]$Actual -cne [string]$Expected){throw 'Sealed configuration differs'}
+    if([string]$Actual -cne [string]$Expected){Fail-Field $Path 'scalar-value-mismatch' $Actual $Expected}
 }
 function Assert-Guests {
     foreach($g in $sealed.guests){
         Check-Window
         $vm=Get-VM -Id $g.id -ErrorAction Stop
-        if($vm.Name -cne $g.name -or [string]$vm.State -cne 'Running'){throw 'Exact Running guest differs'}
+        Assert-Fields $vm.Name $g.name ('guests.'+$g.name+'.name')
+        Assert-Fields ([string]$vm.State) 'Running' ('guests.'+$g.name+'.state')
         $m=Get-VMMemory -VM $vm;$p=Get-VMProcessor -VM $vm
         $a=@{name=$vm.Name;id=$vm.Id.ToString();cpu=$vm.ProcessorCount;memory=$vm.MemoryStartup;dynamicMemory=$m.DynamicMemoryEnabled;
             generation=$vm.Generation;version=$vm.Version.ToString();path=$vm.Path;configurationLocation=$vm.ConfigurationLocation;snapshotLocation=$vm.SnapshotFileLocation;
@@ -50,7 +68,7 @@ function Assert-Guests {
                 $vlan=$_|Get-VMNetworkAdapterVlan
                 @{name=$_.Name;id=$_.Id;switchId=$_.SwitchId.ToString();mac=$_.MacAddress;dynamicMac=$_.DynamicMacAddressEnabled;
                   spoofing=$_.MacAddressSpoofing.ToString();teaming=$_.AllowTeaming.ToString();vlan=@{mode=$vlan.OperationMode.ToString();native=$vlan.NativeVlanId;allowed=$vlan.AllowedVlanIdList}}})}
-        Assert-Fields $a $g
+        Assert-Fields $a $g ('guests.'+$g.name)
     }
 }
 function Read-Volumes {
@@ -210,6 +228,6 @@ try {
       sampleLimitations='Two metadata samples, not an atomic filesystem snapshot or reservation. Existing runtime remains in otherUsed and full future runtime is added conservatively.';
       mutationPerformed=$false;fileContentsRead=$false;credentialsRead=$false;executionAdmitted=$false}|ConvertTo-Json -Depth 20 -Compress
 } catch {
-    @{status='failed-read-only';phase=$phase;baselineSha256=$baselineSha256;errorType=$_.Exception.GetType().FullName;errorCategory=[string]$_.CategoryInfo.Category;
+    @{status='failed-read-only';phase=$phase;baselineSha256=$baselineSha256;configurationMismatch=$script:configurationMismatch;errorType=$_.Exception.GetType().FullName;errorCategory=[string]$_.CategoryInfo.Category;
       sampledFiles=$rows;accountingValid=$false;mutationPerformed=$false;fileContentsRead=$false;credentialsRead=$false;executionAdmitted=$false}|ConvertTo-Json -Depth 12 -Compress
 }
