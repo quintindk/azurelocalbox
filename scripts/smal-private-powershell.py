@@ -524,6 +524,8 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
+                     'scripts/read-smal-rolling03-handoff-20261110-01.ps1': 300,
+                     'scripts/read-smal-rolling03-baseline-20261110-01.ps1': 300,
                      'scripts/rolling-profile-live-20261110/drain-LB-NODE02.observe.ps1': 300,
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
@@ -548,6 +550,10 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     if relative.startswith('scripts/rolling-profile-live-20261110-02/') and relative.endswith('.observe.ps1'):
         guest_timeout = 300
     elif relative.startswith('scripts/rolling-profile-live-20261110-02/') and relative.endswith('.supervised-dispatch.ps1'):
+        guest_timeout = 600
+    elif relative.startswith('scripts/rolling-profile-live-20261110-03/') and relative.endswith('.observe.ps1'):
+        guest_timeout = 300
+    elif relative.startswith('scripts/rolling-profile-live-20261110-03/') and relative.endswith('.supervised-dispatch.ps1'):
         guest_timeout = 600
     record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:
