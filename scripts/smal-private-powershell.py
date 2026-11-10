@@ -26,13 +26,7 @@ VM_ID = f"/subscriptions/{BASE['SUB']}/resourceGroups/{BASE['RG']}/providers/Mic
 
 
 def ssh_args(port, admin, encoded, stream_source=False):
-    # Canonical sshd DefaultShell is Windows PowerShell. A nested powershell.exe
-    # creates another native/text stdin relay. Read binary frames in that existing
-    # shell instead; no server/auth/config change and no caller-supplied command.
     remote = 'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' + encoded
-    if stream_source:
-        base64.b64decode(encoded, validate=True)
-        remote = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);& ([ScriptBlock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encoded + "'))))"
     return ['ssh', *([] if stream_source else ['-n']), '-v', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
             '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes',
             '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
@@ -50,6 +44,100 @@ def run_ssh(args, source, stream_source, timeout):
     result.stdout = result.stdout.decode('utf-8')
     result.stderr = result.stderr.decode('utf-8', errors='replace')
     return result
+
+
+def sftp_args(port, admin):
+    return ['sftp', '-F', '/dev/null', '-b', '-', '-P', str(port), '-i', str(H['KEY']),
+            '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes',
+            '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
+            '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(H['KNOWN']),
+            '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=' + H['ALIAS'],
+            '-o', 'HostKeyAlgorithms=ssh-ed25519', '-o', 'ConnectTimeout=15',
+            '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
+            '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', admin + '@127.0.0.1']
+
+
+def staging_controls(name, source, commit):
+    if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name) or not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise RuntimeError('Exact staging receipt/source identity required')
+    if not source or len(source) > 2 * 1024**2:
+        raise RuntimeError('Reviewed script exceeds the source transport byte cap')
+    source.decode('utf-8')
+    directory = 'C:\\ProgramData\\AzureLocalBox\\CommandTransport\\' + name
+    context = {'name': name, 'directory': directory, 'path': directory + '\\command.ps1',
+               'sourceSha256': hashlib.sha256(source).hexdigest(), 'sourceBytes': len(source), 'sourceCommit': commit}
+    value = base64.b64encode(json.dumps(context, separators=(',', ':')).encode()).decode()
+    prefix = "$ErrorActionPreference='Stop';try{if($env:COMPUTERNAME -cne 'LocalBox-Client'){throw 'Wrong outer host'};$c=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + value + "'))|ConvertFrom-Json);"
+    write = "function NewJson($p,$v){$b=[Text.Encoding]::UTF8.GetBytes(($v|ConvertTo-Json -Depth 8 -Compress));$s=[IO.File]::Open($p,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);try{$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}};"
+    suffix = "}catch{[Console]::Error.WriteLine('ReviewedSourceFailure:'+ $_.Exception.GetType().Name+':'+$_.InvocationInfo.ScriptLineNumber);exit 1}"
+    prepare = prefix + write + r"""
+$base='C:\ProgramData\AzureLocalBox\CommandTransport';$acl=Get-Acl 'C:\ProgramData\AzureLocalBox\Bootstrap\cluster-prereqs-20261028-01'
+if(Test-Path -LiteralPath $c.directory){throw 'Staging path already exists; no replay'}
+if(-not(Test-Path -LiteralPath $base)){$null=New-Item $base -ItemType Directory;Set-Acl $base $acl}
+$b=Get-Item -LiteralPath $base;if(-not $b.PSIsContainer -or ($b.Attributes -band [IO.FileAttributes]::ReparsePoint) -or (Get-Acl $base).Sddl -cne $acl.Sddl){throw 'Unsafe staging base'}
+$null=New-Item $c.directory -ItemType Directory;Set-Acl $c.directory $acl
+if((Get-Acl $c.directory).Sddl -cne $acl.Sddl){throw 'Unsafe staging ACL'}
+NewJson (Join-Path $c.directory 'source.json') $c
+$s=[IO.File]::Open($c.path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$s.Dispose()
+@{status='prepared';directory=$c.directory;path=$c.path;sourceSha256=$c.sourceSha256;sourceBytes=$c.sourceBytes;sourceCommit=$c.sourceCommit;reservedEmptySource=$true}|ConvertTo-Json -Compress
+""" + suffix
+    invoke = prefix + write + r"""
+$dir=Get-Item -LiteralPath $c.directory;$f=Get-Item -LiteralPath $c.path
+if(-not $dir.PSIsContainer -or ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $f.PSIsContainer -or ($f.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Staging path changed'}
+$m=Get-Content -LiteralPath (Join-Path $c.directory 'source.json') -Raw|ConvertFrom-Json
+foreach($k in @('name','directory','path','sourceSha256','sourceBytes','sourceCommit')){if([string]$m.$k -cne [string]$c.$k){throw 'Staging source identity differs'}}
+if($f.Length -ne $c.sourceBytes -or $f.Length -gt 2097152 -or (Get-FileHash -LiteralPath $c.path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $c.sourceSha256){throw 'Staged source length/hash differs'}
+$b=[IO.File]::ReadAllBytes($c.path)
+$h=[Security.Cryptography.SHA256]::Create();try{$sha=[BitConverter]::ToString($h.ComputeHash($b)).Replace('-','').ToLowerInvariant()}finally{$h.Dispose()}
+if($b.Length -ne $c.sourceBytes -or $sha -cne $c.sourceSha256){throw 'Staged bytes changed'}
+$text=[Text.UTF8Encoding]::new($false,$true).GetString($b)
+NewJson (Join-Path $c.directory 'execution-started.json') @{sourceSha256=$sha;sourceCommit=$c.sourceCommit;atUtc=[datetime]::UtcNow.ToString('o');pid=$PID}
+& ([ScriptBlock]::Create($text));exit 0
+""" + suffix
+    return context, prepare, invoke
+
+
+def local_staged_source(name, source):
+    base = Path.home() / '.local/state/azurelocalbox/command-transport'
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if base.is_symlink() or base.stat().st_uid != os.getuid() or stat.S_IMODE(base.stat().st_mode) != 0o700:
+        raise RuntimeError('Unsafe local source staging directory')
+    directory = base / name
+    directory.mkdir(mode=0o700)
+    path = directory / 'command.ps1'
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(source)
+    return path
+
+
+def run_staged_source(port, admin, name, source, commit, timeout, record, save):
+    context, prepare, invoke = staging_controls(name, source, commit)
+    local = local_staged_source(name, source)
+    record['staging'] = {**context, 'localSource': str(local), 'sftpPath': context['path'].replace('C:\\', '/C:/').replace('\\', '/'), 'phase': 'prepare-started', 'executionAttempted': False}
+    save()
+    def control(text, limit):
+        encoded = base64.b64encode(text.encode('utf-16-le')).decode()
+        if len(encoded) > 16000:raise RuntimeError('Staging control exceeds encoded-command bound')
+        return run_ssh(ssh_args(port, admin, encoded), b'', False, limit)
+    prepared = control(prepare, 30)
+    record['staging']['prepareExitCode'] = prepared.returncode
+    save()
+    if prepared.returncode:raise RuntimeError('Staging preparation failed; retain original path, no upload/execute/retry')
+    actual = json.loads(prepared.stdout)
+    if actual != {'status': 'prepared', **{k: context[k] for k in ('directory','path','sourceSha256','sourceBytes','sourceCommit')}, 'reservedEmptySource': True}:
+        raise RuntimeError('Staging preparation result differs; no upload/execute/retry')
+    record['staging']['phase'] = 'upload-started';save()
+    def quote(path):
+        if '\n' in path or '\r' in path:raise RuntimeError('Invalid staging batch path')
+        return '"' + path.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    batch = 'put ' + quote(str(local)) + ' ' + quote(record['staging']['sftpPath']) + '\nquit\n'
+    uploaded = subprocess.run(sftp_args(port, admin), input=batch.encode(), capture_output=True, timeout=60)
+    record['staging'].update(uploadExitCode=uploaded.returncode, uploadStdoutSha256=hashlib.sha256(uploaded.stdout).hexdigest(), uploadStderrSha256=hashlib.sha256(uploaded.stderr).hexdigest())
+    save()
+    if uploaded.returncode:raise RuntimeError('Source upload failed; retain original path, no execute/retry')
+    record['staging'].update(phase='invoke-started', executionAttempted=True);save()
+    return control(invoke, timeout)
 
 
 def stdin_loader(source):
@@ -417,19 +505,20 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     encoded = base64.b64encode(source.decode('utf-8').encode('utf-16-le')).decode('ascii')
     stream_source = len(encoded) > 16000 or relative == 'scripts/read-smal-node03-job.ps1'
     original_encoded_length = len(encoded)
-    if stream_source:
-        encoded = stdin_loader(source)
+    if len(source) > 2 * 1024**2:
+        raise RuntimeError('Reviewed script exceeds the source transport byte cap')
     record = {'beganAtSast': BASE['now'](), 'status': 'pending', 'commit': head, 'script': relative,
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
-    record['scriptTransport'] = 'sha256-length-framed-binary-stdin-direct-default-powershell' if stream_source else 'encoded-command'
+    record['scriptTransport'] = 'sftp-staged-sha256-source' if stream_source else 'encoded-command'
     record['renderedSourceSha256'] = hashlib.sha256(source).hexdigest()
     record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
+                     'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
                      'scripts/rolling-profile-live-20261110/drain-LB-NODE02.observe.ps1': 300,
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
@@ -451,6 +540,8 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/prepare-smal-cluster-prereqs.ps1': 600,
                      'scripts/inspect-smal-guest-inputs.ps1': 300,
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
+    if relative.startswith('scripts/rolling-profile-live-20261110-02/') and relative.endswith('.observe.ps1'):
+        guest_timeout = 300
     record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')
@@ -472,7 +563,11 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
             time.sleep(1)
         else:
             raise RuntimeError('Private Bastion tunnel not ready')
-        result = run_ssh(ssh_args(port, setup['result']['adminUser'], encoded, stream_source), source, stream_source, guest_timeout)
+        if stream_source:
+            result = run_staged_source(port, setup['result']['adminUser'], name, source, head, guest_timeout, record,
+                                       lambda: target.write_text(json.dumps(record, indent=2) + '\n'))
+        else:
+            result = run_ssh(ssh_args(port, setup['result']['adminUser'], encoded), source, False, guest_timeout)
         record['sshExitCode'] = result.returncode
         record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
         safe_error = re.search(r'ReviewedSourceFailure:([A-Za-z0-9._]+):([0-9]+)', result.stderr)
