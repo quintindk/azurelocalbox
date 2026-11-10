@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $ComputeCapacityLibraryOnly = $true
 if ($env:COMPUTERNAME -cne 'LocalBox-Client') { throw 'Wrong outer host' }
-$readDeadline = [DateTimeOffset]::Parse('2026-11-10T12:30:00+02:00')
+$readDeadline = [DateTimeOffset]::Parse('2026-11-10T15:00:00+02:00')
 if ([DateTimeOffset](Get-Date) -ge $readDeadline) { throw 'Fixed baseline read window closed' }
 $commonSourceSha256 = '0e58f64f888c897a48b1d4f28bd6faec22346e9d8f1c36e4c92da29f0a2b6b86'
 $hash = [Security.Cryptography.SHA256]::Create()
