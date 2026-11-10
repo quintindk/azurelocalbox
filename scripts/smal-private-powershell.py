@@ -518,6 +518,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/resume-smal-rolling02-original-worker.ps1': 600,
                      'scripts/rolling-profile-live-20261110-02/resume-smal-rolling02-journal-fixed-01.ps1': 600,
+                     'scripts/rolling-profile-live-20261110-02/prove-original-drain-maintenance-20261110-01.ps1': 300,
                      'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
