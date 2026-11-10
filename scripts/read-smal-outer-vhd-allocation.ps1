@@ -6,7 +6,7 @@
 # https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_compression_info
 $ErrorActionPreference='Stop';$phase='preimage';$rows=@();$script:configurationMismatch=$null
 $baselineSha256='435a0ee69c0388fbdb955db33ee6b12627eadd28afda7d685e133cd7b3960507'
-$deadline=[DateTimeOffset]::Parse('2026-11-10T14:00:00+02:00')
+$deadline=[DateTimeOffset]::Parse('2026-11-10T15:00:00+02:00')
 $sealedSha256='587e5120ffb6242c2958567c72cb627bde45a93f6b35bb3e0fb5a7171b32f793'
 $sealedGzip=@(
 'H4sIAAAAAAAC/+1bW2/bOBP9L34OF7xf8vJB12KBTVM0/dIC6z5QEhULtS2vLCftFvnvO7Tj1Gm9QZvQjbJogACSKM0cHg3Hc0jq86iwSzdt5u5sYqmQo+MRZ8Ji56QpMdO6LqrCCFEVjMG1glBJlbNVRbWtK6sqqYUjjJWVKpiRWGA1OhpdrNyyX46O//w8mtuZA6N/xChNMIG2poLT2vBSkZogeJwjrguDrIFTTZkujWFSVhjuLRer0TE9Gs3crO0+jY45NdxIRY08GlWfwHRTntw01Xa6dODZzV1n+6adrx+8dN1yfTwi9DdvcWH7CZydH4/H0d+rzv3RlnYatx/H4xdrzOPx1F9Bmx4giqkkmGqEyXh804fbAw+wndfNxWrj0dvaeA5mfzm3'
@@ -67,7 +67,7 @@ function Assert-Guests {
             nics=@(Get-VMNetworkAdapter -VM $vm|Sort-Object Name|ForEach-Object {
                 $vlan=$_|Get-VMNetworkAdapterVlan
                 @{name=$_.Name;id=$_.Id;switchId=$_.SwitchId.ToString();mac=$_.MacAddress;dynamicMac=$_.DynamicMacAddressEnabled;
-                  spoofing=$_.MacAddressSpoofing.ToString();teaming=$_.AllowTeaming.ToString();vlan=@{mode=$vlan.OperationMode.ToString();native=$vlan.NativeVlanId;allowed=$vlan.AllowedVlanIdList}}})}
+                  spoofing=$_.MacAddressSpoofing.ToString();teaming=$_.AllowTeaming.ToString();vlan=@{mode=$vlan.OperationMode.ToString();native=$vlan.NativeVlanId;allowed=@($vlan.AllowedVlanIdList)}}})}
         Assert-Fields $a $g ('guests.'+$g.name)
     }
 }
