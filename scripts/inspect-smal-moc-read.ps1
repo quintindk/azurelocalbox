@@ -33,6 +33,46 @@ try {
             if ($text.Length -gt 1024 -or $text -match '-----BEGIN|\beyJ[A-Za-z0-9_-]{15,}\.|(?i:password|access_token|refresh_token)|://|\?') {return @{status='withheld';sha256=(Digest ([Text.Encoding]::UTF8.GetBytes($text)))}}
             @{status='reported';value=$text;type=$Value.GetType().FullName}
         }
+        function Member($Item,[string]$Name) {
+            if ($null -eq $Item) {return @{present=$false;value=$null}}
+            if ($Item -is [Collections.IDictionary]) {
+                $keys=@($Item.Keys|Where-Object {$_ -is [string] -and $_ -ieq $Name})
+                if ($keys.Count -gt 1) {throw 'Ambiguous vendor dictionary keys'}
+                if ($keys.Count -eq 1) {return @{present=$true;value=$Item[$keys[0]]}}
+            } else {
+                $property=$Item.PSObject.Properties[$Name]
+                if ($null -ne $property) {return @{present=$true;value=$property.Value}}
+            }
+            @{present=$false;value=$null}
+        }
+        function Shape($Item,[int]$Depth=0) {
+            if ($null -eq $Item) {return @{clrType='null';kind='null'}}
+            $shape=@{clrType=(SafeValue $Item.GetType().FullName);valuesExported=$false}
+            if ($Item -is [string] -or $Item -is [ValueType]) {$shape.kind='scalar';return $shape}
+            if ($Item -is [Collections.IDictionary]) {
+                $shape.kind='dictionary';$shape.memberCount=$Item.Count
+                $shape.members=@($Item.Keys|Select-Object -First 64|ForEach-Object {
+                    $key=$_;$value=$Item[$key]
+                    @{name=(SafeValue $key);clrType=$(if($null -eq $value){'null'}else{SafeValue $value.GetType().FullName})}
+                })
+                $shape.complete=$Item.Count -le 64
+            } elseif ($Item -is [Collections.IList]) {
+                $shape.kind='collection';$shape.count=$Item.Count;$shape.complete=$Item.Count -le 64 -and $Depth -lt 2
+                if ($Depth -lt 2) {$shape.items=@($Item|Select-Object -First 64|ForEach-Object {Shape $_ ($Depth+1)})}
+            } else {
+                $shape.kind='object';$properties=@($Item.PSObject.Properties);$shape.memberCount=$properties.Count
+                $shape.members=@($properties|Select-Object -First 64|ForEach-Object {@{name=(SafeValue $_.Name);declaredType=(SafeValue $_.TypeNameOfValue)}})
+                $shape.complete=$properties.Count -le 64
+            }
+            # Inspect only recognised collection members, never arbitrary private property values.
+            if ($Depth -lt 2 -and $shape.kind -cin @('dictionary','object')) {
+                $shape.collections=@(foreach($name in @('value','locations','galleryImages','containers','groups')) {
+                    $member=Member $Item $name
+                    if ($member.present) {@{name=$name;shape=(Shape $member.value ($Depth+1))}}
+                })
+            }
+            $shape
+        }
         function ProjectItem($Item) {
             # Fixed management fields only. Missing fields are not absence/zero evidence.
             $paths=@('id','name','type','location','group','state','provisioningState','path','imagePath','containerName','containerId','storageContainerId','version','imageVersion','kubernetesVersion','osType','osSku','architecture','size','sizeBytes','sizeInMB','sizeInGB','virtualSize','virtualSizeBytes','diskSizeBytes','diskSizeGB','properties.id','properties.name','properties.path','properties.imagePath','properties.provisioningState','properties.size','properties.sizeBytes','properties.sizeInMB','properties.sizeInGB','properties.virtualSizeBytes','properties.containerId','status.state','status.provisioningState','storageProfile.osDiskImage.sizeInMB','version.properties.storageProfile.osDiskImage.sizeInMB')
@@ -40,8 +80,9 @@ try {
             foreach($path in $paths) {
                 $value=$Item;$present=$true
                 foreach($part in $path.Split('.')) {
-                    if ($null -eq $value -or $null -eq $value.PSObject.Properties[$part]) {$present=$false;break}
-                    $value=$value.PSObject.Properties[$part].Value
+                    $member=Member $value $part
+                    if (-not $member.present) {$present=$false;break}
+                    $value=$member.value
                 }
                 if ($present) {$fields[$path]=SafeValue $value} else {$missing+= $path}
             }
@@ -72,10 +113,18 @@ try {
             try {& $Read *>&1|ForEach-Object {$records.Add($_)}} catch {$failure=$_}
             SaveCapture $Name $records $failure
         }
-        function Items($Call) {
+        function Items($Call,[string]$Envelope) {
             $data=@($Call.data)
-            if ($data.Count -eq 1 -and $null -ne $data[0].PSObject.Properties['value']) {$data=@($data[0].value)}
-            if ($data.Count -gt 64 -or @($data|Where-Object {$_ -is [string]}).Count) {throw 'Unsupported or oversized vendor result shape'}
+            for($depth=0;$depth -lt 3 -and $data.Count -eq 1;$depth++) {
+                $members=@(@('value',$Envelope)|Select-Object -Unique|ForEach-Object {Member $data[0] $_}|Where-Object {$_.present})
+                if ($members.Count -gt 1) {throw 'Ambiguous vendor collection envelope'}
+                if ($members.Count -eq 0) {break}
+                $collection=$members[0].value
+                if ($null -ne $collection -and ($collection -is [string] -or $collection -is [Collections.IDictionary] -or $collection -isnot [Collections.IEnumerable])) {throw 'Vendor envelope is not a collection'}
+                $data=@();if ($null -ne $collection) {$data=@($collection)}
+            }
+            if ($data.Count -gt 64 -or @($data|Where-Object {$null -eq $_ -or $_ -is [string] -or $_ -is [ValueType]}).Count) {throw 'Unsupported or oversized vendor result shape'}
+            if ($data.Count -eq 1 -and ((Member $data[0] 'value').present -or (Member $data[0] $Envelope).present)) {throw 'Vendor envelope depth exceeded'}
             return ,$data
         }
         try {
@@ -103,7 +152,7 @@ try {
                 $pins+=@{path=$path;sha256=$pin[1];signature='Valid';signerThumbprint=$pin[2]}
             }
             if (@(Get-Module -Name Moc).Count) {throw 'Unexpected pre-imported Moc module'}
-            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261109-02'
+            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-01'
             if (-not (Test-Path -LiteralPath $privateRoot) -or $PSCommandPath -ine (Join-Path $privateRoot 'client-read.ps1')) {throw 'Expected protected fixed client process required'}
             $begin=[IO.File]::Open((Join-Path $privateRoot 'client-began'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$begin.Dispose()
             $privateReady=$true
@@ -119,10 +168,15 @@ try {
             $phase='locations'
             $call=ClientCall 'locations' {Get-MocLocation -timeoutSeconds 20 -ErrorAction Stop}
             if ($call.status -cne 'complete') {return @{status='failed';failure=$call;pins=$pins;calls=$calls}}
-            $locations=Items $call
-            $calls+=@{phase=$phase;status='complete';count=$locations.Count;items=@($locations|ForEach-Object {ProjectItem $_});diagnostic=$call.diagnostic}
-            if ($locations.Count -ne 1 -or $null -eq $locations[0].PSObject.Properties['name'] -or $locations[0].name -isnot [string] -or $locations[0].name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {return @{status='scope-incomplete-stop';reason='Unique actual lab location name not established';pins=$pins;calls=$calls}}
-            $location=$locations[0].name
+            $locationCall=@{phase=$phase;status='complete';pipelineRecordCount=@($call.data).Count;pipelineShapesComplete=(@($call.data).Count -le 64);pipelineShapes=@($call.data|Select-Object -First 64|ForEach-Object {Shape $_});diagnostic=$call.diagnostic}
+            $calls+=,$locationCall
+            try {$locations=Items $call 'locations'} catch {
+                return @{status='scope-incomplete-stop';reason='Actual location pipeline shape unsupported; inspect safe CLR structure and node-private display capture';pins=$pins;calls=$calls;rawStreamsExported=$false}
+            }
+            $locationCall.count=$locations.Count;$locationCall.items=@($locations|ForEach-Object {ProjectItem $_})
+            $location=$null
+            if ($locations.Count -eq 1) {$location=(Member $locations[0] 'name').value}
+            if ($location -isnot [string] -or $location -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' -or (SafeValue $location).status -cne 'reported') {return @{status='scope-incomplete-stop';reason='Unique actual lab location name not established';pins=$pins;calls=$calls}}
             foreach($name in @('gallery-images','containers','groups')) {
                 $phase=$name
                 $call=switch($name){
@@ -131,8 +185,13 @@ try {
                     'groups' {ClientCall $name {Get-MocGroup -location $location -timeoutSeconds 20 -ErrorAction Stop}}
                 }
                 if ($call.status -cne 'complete') {return @{status='failed';failure=$call;pins=$pins;calls=$calls}}
-                $items=Items $call
-                $calls+=@{phase=$phase;status='complete';count=$items.Count;items=@($items|ForEach-Object {ProjectItem $_});diagnostic=$call.diagnostic}
+                $envelope=switch($name){'gallery-images' {'galleryImages'} 'containers' {'containers'} 'groups' {'groups'}}
+                $managementCall=@{phase=$phase;status='complete';pipelineRecordCount=@($call.data).Count;pipelineShapesComplete=(@($call.data).Count -le 64);pipelineShapes=@($call.data|Select-Object -First 64|ForEach-Object {Shape $_});diagnostic=$call.diagnostic}
+                $calls+=,$managementCall
+                try {$items=Items $call $envelope} catch {
+                    return @{status='scope-incomplete-stop';reason='Actual management pipeline shape unsupported; inspect safe CLR structure and node-private display capture';pins=$pins;calls=$calls;rawStreamsExported=$false}
+                }
+                $managementCall.count=$items.Count;$managementCall.items=@($items|ForEach-Object {ProjectItem $_})
             }
             @{status='complete';atUtc=[DateTime]::UtcNow.ToString('o');location=(SafeValue $location);pins=$pins;calls=$calls;
               runtimePermissionUsed='existing-client-auth-cache-log-environment-and-idempotent-read-retry';resourceWritesRequested=$false;
@@ -150,7 +209,7 @@ try {
     }
     # One fixed child, not a general dispatcher: catches vendor Out-Default/console output.
     $clientSource="function Invoke-FixedMocRead {`n"+$runtime.ToString()+"`n}`n"+
-        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261109-02\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
+        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261110-01\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
     $result=Invoke-Command -Session $session -ArgumentList $clientSource -ErrorAction Stop -ScriptBlock {
         param([string]$ClientSource)
         $ErrorActionPreference='Stop'
@@ -216,12 +275,22 @@ try {
         }
         $original=Read-OriginalMocState 'C:\ProgramData\AzureLocalBox\MocRead-20261109-01'
         if ($original.readComplete -ne $true -or $original.provedPrelaunchUnstarted -ne $true) {return @{status='blocked-original-reconciliation-required';original=$original;retryAllowed=$false}}
-        $root='C:\ProgramData\AzureLocalBox\MocRead-20261109-02'
-        if (Test-Path -LiteralPath $root) {return @{status='blocked-second-root-already-exists';original=$original;secondRoot=(Read-OriginalMocState $root);retryAllowed=$false}}
+        $previousRoot='C:\ProgramData\AzureLocalBox\MocRead-20261109-02'
+        $previous=Read-OriginalMocState $previousRoot
+        $previousRecord=Get-Content -LiteralPath (Join-Path $previousRoot 'process.json') -Raw|ConvertFrom-Json
+        if ($previous.readComplete -ne $true -or $previous.matchingProcesses.Count -ne 0 -or $previous.unreadablePowerShellCommandLineCount -ne 0 -or
+            $previousRecord.pid -ne 6824 -or $previousRecord.sourceSha256 -cne '079b5ceea3d9fe8261484447ad2e472303feba79c2dd4e2e686f89d7bcf529cf' -or ([DateTimeOffset]$previousRecord.processStartedUtc).UtcDateTime.Ticks -ne ([DateTimeOffset]::Parse('2026-11-09T19:51:17.6309347Z')).UtcDateTime.Ticks -or
+            (Get-FileHash -LiteralPath (Join-Path $previousRoot 'client-read.ps1')).Hash -ine '079b5ceea3d9fe8261484447ad2e472303feba79c2dd4e2e686f89d7bcf529cf' -or
+            (Get-FileHash -LiteralPath (Join-Path $previousRoot 'result.json')).Hash -ine 'f2c667d72b6028d19a7728a6d70a43ed31b955cc0ab6fe62af2bda51e037dfd8' -or $previous.safeResultStatus -cne 'scope-incomplete-stop') {
+            return @{status='blocked-previous-result-lineage-or-process';original=$original;previous=$previous;retryAllowed=$false}
+        }
+        $root='C:\ProgramData\AzureLocalBox\MocRead-20261110-01'
+        if (Test-Path -LiteralPath $root) {return @{status='blocked-new-root-already-exists';original=$original;previous=$previous;retryAllowed=$false}}
         New-ProtectedMocDirectory $root
         $script=Join-Path $root 'client-read.ps1';[IO.File]::WriteAllText($script,$ClientSource,[Text.UTF8Encoding]::new($false))
         $sourceSha=(Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant()
         $process=Start-Process -FilePath powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$script) -RedirectStandardOutput (Join-Path $root 'client.stdout') -RedirectStandardError (Join-Path $root 'client.stderr') -PassThru
+        $handle=$process.Handle # Retain the native process handle before waiting for exit.
         $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root;original=$original}
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
         if (-not $process.WaitForExit(75000)) {
@@ -231,8 +300,10 @@ try {
         $process.Refresh();$record.status='exited';$record.exitCode=$process.ExitCode
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
         $path=Join-Path $root 'result.json'
-        if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -gt 1048576) {return @{status='failed-private-client-result-unavailable';original=$original;process=$record;rawStreamsExported=$false}}
-        @{status='client-result';original=$original;process=$record;result=(Get-Content -LiteralPath $path -Raw|ConvertFrom-Json);rawStreamsExported=$false}
+        if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -gt 1048576) {return @{status='failed-private-client-result-unavailable';original=$original;previous=$previous;process=$record;rawStreamsExported=$false}}
+        $safe=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json
+        if ($safe.status -cnotin @('complete','failed','scope-incomplete-stop')) {throw 'Unrecognised safe result status'}
+        @{status='client-result';original=$original;previous=$previous;process=$record;result=$safe;resultSha256=(Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant();clientSourceSha256=$sourceSha;exitCodeMeaning='reported-if-available-not-business-proof';rawStreamsExported=$false}
     }
     @{node='LB-NODE01';vmId=$vm.Id.ToString();result=$result;atUtc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json -Depth 24 -Compress
 } catch {
