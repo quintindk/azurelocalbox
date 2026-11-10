@@ -21,10 +21,10 @@ function Get-SafeExceptionChain([Exception]$Exception) {
 $phase = 'host-window-check'
 try {
 if ($env:COMPUTERNAME -ine 'LocalBox-Client' -or $env:OS -cne 'Windows_NT') { throw 'Exact LocalBox-Client required' }
-$end = [DateTimeOffset]::Parse('2026-11-09T23:50:00+02:00')
+$end = [DateTimeOffset]::Parse('2026-11-10T09:30:00+02:00')
 if ([DateTimeOffset]::UtcNow -ge $end) { throw 'Diagnostic phase expired' }
 $phase = 'staging-path-selection'
-$directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'smal-bridge-customer-20261109-02'
+$directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'smal-bridge-customer-20261110-01'
 $credentialPath = Join-Path $directory 'credential.json'
 if ($Mode -eq 'Auto') {
     if (-not (Test-Path -LiteralPath $directory)) { $Mode = 'Prepare' }
@@ -52,7 +52,7 @@ function Assert-PrivatePath([string]$Path, [bool]$Directory) {
 }
 if ($Mode -eq 'Prepare') {
     $phase = 'prepare-private-directory'
-    if ([DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse('2026-11-09T23:40:00+02:00')) { throw 'Credential staging deadline expired' }
+    if ([DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse('2026-11-10T09:15:00+02:00')) { throw 'Credential staging deadline expired' }
     if (Test-Path -LiteralPath $directory) { throw 'Fresh staging directory already exists; preserve it' }
     [void][IO.Directory]::CreateDirectory($directory)
     $acl = New-Object Security.AccessControl.DirectorySecurity
@@ -73,7 +73,7 @@ if ($Mode -eq 'Prepare') {
     $item = Get-Item -LiteralPath $credentialPath
     if ($item.Length -gt 262144) { throw 'Credential envelope exceeds cap' }
     $bytes = [IO.File]::ReadAllBytes($credentialPath)
-    if ((Get-Digest $bytes) -cne '7662932bce431e93d0c4e9c4436cb97d8ecaf0698ac5832edbc7651a225534dc') { throw 'Exact selected credential envelope differs' }
+    if ((Get-Digest $bytes) -cne '9b32d0585a2e311f904280ce7f05ed4e70bc032245c86f9eaf533e2bd763c0a5') { throw 'Exact selected credential envelope differs' }
     $phase = 'credential-envelope-parse-window'
     $config = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json; $bytes = $null
     if ($config.schemaVersion -ne 1 -or $config.profile -cne 'clusterCustomerUser' -or [DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($config.expiresAt)) { throw 'Credential profile/window mismatch' }
