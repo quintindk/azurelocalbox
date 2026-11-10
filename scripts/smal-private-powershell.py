@@ -528,6 +528,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/read-smal-rolling03-baseline-20261110-01.ps1': 300,
                      'scripts/read-smal-rolling03-baseline-20261110-02.ps1': 300,
                      'scripts/read-smal-rolling03-baseline-20261110-03.ps1': 300,
+                     'scripts/read-smal-rolling03-offconfig-cpu-qualification-20261110-02.ps1': 300,
                      'scripts/rolling-profile-live-20261110/drain-LB-NODE02.observe.ps1': 300,
                      'scripts/start-smal-existing-guests.ps1': 360,
                      'scripts/inspect-smal-arc-registration.ps1': 180,
