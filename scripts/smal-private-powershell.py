@@ -26,6 +26,13 @@ VM_ID = f"/subscriptions/{BASE['SUB']}/resourceGroups/{BASE['RG']}/providers/Mic
 
 
 def ssh_args(port, admin, encoded, stream_source=False):
+    # Canonical sshd DefaultShell is Windows PowerShell. A nested powershell.exe
+    # creates another native/text stdin relay. Read binary frames in that existing
+    # shell instead; no server/auth/config change and no caller-supplied command.
+    remote = 'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' + encoded
+    if stream_source:
+        base64.b64decode(encoded, validate=True)
+        remote = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);& ([ScriptBlock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encoded + "'))))"
     return ['ssh', *([] if stream_source else ['-n']), '-v', '-F', '/dev/null', '-T', '-p', str(port), '-i', str(H['KEY']),
             '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes',
             '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
@@ -34,7 +41,15 @@ def ssh_args(port, admin, encoded, stream_source=False):
             '-o', 'HostKeyAlgorithms=ssh-ed25519', '-o', 'ConnectTimeout=15',
             '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
             '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
-            admin + '@127.0.0.1', 'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' + encoded]
+            admin + '@127.0.0.1', remote]
+
+
+def run_ssh(args, source, stream_source, timeout):
+    io = {'input': source} if stream_source else {'stdin': subprocess.DEVNULL}
+    result = subprocess.run(args, **io, capture_output=True, timeout=timeout)
+    result.stdout = result.stdout.decode('utf-8')
+    result.stderr = result.stderr.decode('utf-8', errors='replace')
+    return result
 
 
 def stdin_loader(source):
@@ -408,11 +423,12 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
               'transport': 'VPN-private-Premium-Bastion-loopback-SSH22', 'strictPinnedHostKey': True,
               'passwordAuthentication': False, 'privateKeyValueExported': False}
     record['localPort'] = port
-    record['scriptTransport'] = 'sha256-length-framed-utf8-stdin' if stream_source else 'encoded-command'
+    record['scriptTransport'] = 'sha256-length-framed-binary-stdin-direct-default-powershell' if stream_source else 'encoded-command'
     record['renderedSourceSha256'] = hashlib.sha256(source).hexdigest()
     record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
+                     'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/rolling-profile-live-20261110/drain-LB-NODE02.observe.ps1': 300,
                      'scripts/start-smal-existing-guests.ps1': 360,
@@ -456,8 +472,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
             time.sleep(1)
         else:
             raise RuntimeError('Private Bastion tunnel not ready')
-        io = {'input': source.decode('utf-8')} if stream_source else {'stdin': subprocess.DEVNULL}
-        result = subprocess.run(ssh_args(port, setup['result']['adminUser'], encoded, stream_source), **io, capture_output=True, text=True, encoding='utf-8', timeout=guest_timeout)
+        result = run_ssh(ssh_args(port, setup['result']['adminUser'], encoded, stream_source), source, stream_source, guest_timeout)
         record['sshExitCode'] = result.returncode
         record['sshDiagnostics'] = {label: label in result.stderr for label in ['Server accepts key', 'Authenticated to', 'Sending command:', 'Exit status']}
         safe_error = re.search(r'ReviewedSourceFailure:([A-Za-z0-9._]+):([0-9]+)', result.stderr)
