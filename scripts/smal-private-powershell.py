@@ -418,7 +418,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/inspect-smal-cluster-inputs.ps1': 240,
                      'scripts/inspect-smal-three-node-live.ps1': 240,
                      'scripts/inspect-smal-three-node-final.ps1': 300,
-                     'scripts/inspect-smal-moc-read.ps1': 300,
+                     'scripts/inspect-smal-moc-read.ps1': 420,
                      'scripts/inspect-smal-bitlocker-gap.ps1': 300,
                      'scripts/prepare-smal-capacity-expansion.ps1': 300,
                      'scripts/format-smal-capacity-disk.ps1': 300,
