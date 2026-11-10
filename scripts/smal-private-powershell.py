@@ -517,6 +517,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
                      'scripts/resume-smal-rolling02-original-worker.ps1': 600,
+                     'scripts/rolling-profile-live-20261110-02/resume-smal-rolling02-journal-fixed-01.ps1': 600,
                      'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
@@ -543,6 +544,8 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/stage-smal-2610-image.ps1': 1500}.get(relative, 90)
     if relative.startswith('scripts/rolling-profile-live-20261110-02/') and relative.endswith('.observe.ps1'):
         guest_timeout = 300
+    elif relative.startswith('scripts/rolling-profile-live-20261110-02/') and relative.endswith('.supervised-dispatch.ps1'):
+        guest_timeout = 600
     record['guestCommandTimeoutSeconds'] = guest_timeout
     with target.open('x') as stream:
         stream.write(json.dumps(record, indent=2) + '\n')

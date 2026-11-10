@@ -202,6 +202,39 @@ $moc = Read-NetworkPart {
             @{present=$false;value=$null}
         }
         function Metadata($command) { @{name=$command.Name;module=$command.ModuleName;version=[string]$command.Module.Version;guid=[string]$command.Module.Guid;path=$command.Module.Path;sha256=(Get-FileHash $command.Module.Path -Algorithm SHA256).Hash.ToLowerInvariant();parameters=@($command.Parameters.Keys);parameterSets=@($command.ParameterSets|ForEach-Object {@{name=$_.Name;mandatory=@($_.Parameters|Where-Object IsMandatory|Select-Object -ExpandProperty Name)}})} }
+        # Exact bounded array/list handling retained from the qualified MOC reader.
+        # Dictionaries and objects remain records, never flattened by their fields.
+        function OuterItems($Value) {
+            $flat=[Collections.Generic.List[object]]::new();$limit=@{visited=0}
+            function AddOuter($Value,[int]$Depth) {
+                $limit.visited++;if ($limit.visited -gt 256) {throw 'Outer collection traversal bound exceeded'}
+                if ($Value -is [Collections.IList] -and $Value -isnot [Collections.IDictionary]) {
+                    if ($Depth -ge 4 -or $Value.Count -gt 64) {throw 'Outer collection depth/count exceeded'}
+                    foreach($entry in $Value) {AddOuter $entry ($Depth+1)}
+                } else {
+                    if ($flat.Count -ge 64) {throw 'Normalised item count exceeded'}
+                    $flat.Add($Value)
+                }
+            }
+            AddOuter $Value 0
+            return ,$flat.ToArray()
+        }
+        function Moc-Items($Records,[string]$Envelope) {
+            $data=OuterItems $Records
+            for($depth=0;$depth -lt 3 -and $data.Count -eq 1;$depth++) {
+                if((Moc-Field $data[0] 'nextLink').value){throw 'Paged MOC getter cannot establish complete extent in this fixed read'}
+                $members=@(@('value',$Envelope)|Select-Object -Unique|ForEach-Object {Moc-Field $data[0] $_}|Where-Object {$_.present})
+                if ($members.Count -gt 1) {throw 'Ambiguous vendor collection envelope'}
+                if ($members.Count -eq 0) {break}
+                $collection=$members[0].value
+                if ($null -eq $collection -or $collection -is [Collections.IDictionary] -or $collection -isnot [Collections.IList]) {throw 'Vendor envelope is not an explicit array/list'}
+                $data=OuterItems $collection
+            }
+            if ($data.Count -gt 32 -or @($data|Where-Object {$null -eq $_ -or $_ -is [string] -or $_ -is [ValueType]}).Count) {throw 'Unsupported or oversized vendor result shape'}
+            if ($data.Count -eq 1 -and ((Moc-Field $data[0] 'value').present -or (Moc-Field $data[0] $Envelope).present)) {throw 'Vendor envelope depth exceeded'}
+            foreach($row in $data){if((Moc-Field $row 'nextLink').value){throw 'Unsettled vendor continuation'}}
+            return ,$data
+        }
         function Read-MocList([string]$name,[string]$envelope,[hashtable]$arguments) {
             $script:lastMocBinding=$null
             if ($watch.Elapsed.TotalSeconds -gt 60 -or $script:calls -ge 8) {throw 'MOC eight-getter/60-second budget reached'}
@@ -213,19 +246,10 @@ $moc = Read-NetworkPart {
             $eligible=@($script:lastMocBinding.parameterSets|Where-Object {@($_.mandatory|Where-Object {-not $arguments.ContainsKey($_)}).Count -eq 0})
             if($eligible.Count -eq 0 -or @($command[0].Parameters.Keys|Where-Object {$_ -match '^(ContinuationToken|NextLink|PageSize|SkipToken|MaxResults)$'}).Count){throw 'Installed owning-list signature cannot establish this unpaged scope'}
             $script:calls++
-            $raw=@(& $command[0] @arguments -ErrorAction Stop)
-            for($depth=0;$depth -lt 4 -and $raw.Count -eq 1;$depth++) {
-                if((Moc-Field $raw[0] 'nextLink').value){throw 'Paged MOC getter cannot establish complete extent in this fixed read'}
-                $wrappers=@(@('value',$envelope)|Select-Object -Unique|Where-Object {(Moc-Field $raw[0] $_).present})
-                if($wrappers.Count -gt 1){throw 'Ambiguous MOC list envelope'}
-                if($wrappers.Count -eq 0){break}
-                $value=(Moc-Field $raw[0] $wrappers[0]).value
-                if($null -eq $value -or $value -isnot [Collections.IList]){throw 'Explicit MOC list required; null is not absence'}
-                $raw=@($value)
-            }
-            if($raw.Count -gt 32 -or @($raw|Where-Object {$_ -is [string] -or $null -eq $_}).Count){throw 'MOC result outside fixed object bound'}
+            $raw=Moc-Items -Records @(& $command[0] @arguments -ErrorAction Stop) -Envelope $envelope
             # Only known non-secret network/identity fields. No VM userData, credentials or full vendor streams.
             $items=@(foreach($row in $raw){
+                if($row.name -isnot [string] -or [string]::IsNullOrEmpty($row.name) -or ($null -ne $row.location -and $row.location -isnot [string]) -or ($null -ne $row.group -and $row.group -isnot [string])){throw 'Native MOC name/location/group must be scalar; no member-enumeration identity inference'}
                 $props=$row.properties;if($name -ceq 'Get-MocVirtualMachine'){$props=$row.virtualmachineproperties}
                 @{id=$row.id;name=$row.name;group=$row.group;location=$row.location
                   macAddress=$props.macAddress;ipConfigurations=@($props.ipConfigurations|ForEach-Object {@{subnetId=$_.properties.subnet.id;address=$_.properties.privateIPAddress;prefixLength=$_.properties.prefixLength;gateway=$_.properties.gateway}})
