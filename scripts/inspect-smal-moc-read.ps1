@@ -22,7 +22,8 @@ try {
         $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
         $phase='guest-identity';$privateRoot=$null;$privateReady=$false;$calls=@();$pins=@();$readBudget=@{count=0}
         $vhdRequests=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
-        $containerRoots=@('C:\ClusterStorage\UserStorage_1','C:\ClusterStorage\UserStorage_2','C:\ClusterStorage\UserStorage_3','C:\ClusterStorage\Infrastructure_1\Shares\SU1_Infrastructure_1\MocArb\WorkingDirectory\ImageStore')
+        $containerRoots=@('C:\ClusterStorage\UserStorage_1','C:\ClusterStorage\Infrastructure_1\Shares\SU1_Infrastructure_1\MocArb\WorkingDirectory\ImageStore')
+        $readEnd=[DateTimeOffset]::Parse('2026-11-10T11:45:00+02:00')
         function Digest([byte[]]$Bytes) {
             $h=[Security.Cryptography.SHA256]::Create()
             try {[BitConverter]::ToString($h.ComputeHash($Bytes)).Replace('-','').ToLowerInvariant()} finally {$h.Dispose()}
@@ -72,7 +73,7 @@ try {
                     $member=Member $Item $name
                     if ($member.present) {@{name=$name;shape=(Shape $member.value ($Depth+1))}}
                 })
-                $shape.structures=@(foreach($name in @('properties','status')) {
+                $shape.structures=@(foreach($name in @('properties','virtualmachineproperties','networkinterfaceproperties','virtualnetworkproperties','status','tags')) {
                     $member=Member $Item $name
                     if ($member.present) {@{name=$name;shape=(Shape $member.value ($Depth+1))}}
                 })
@@ -96,27 +97,28 @@ try {
                 $member=Member $Value $name;if(-not $member.present){continue}
                 $leaf=$member.value
                 if ($leaf -is [Collections.IList]) {$fields[$name]=@{status='bounded-scalars';count=$leaf.Count;complete=($leaf.Count -le 32);items=@($leaf|Select-Object -First 32|ForEach-Object {SafeValue $_})}} else {$fields[$name]=SafeValue $leaf}
-                if ($name -cin @('path','imagePath','vhdPath','diskPath','filePath') -and $leaf -is [string] -and (SafeValue $leaf).status -ceq 'reported') {
-                    $admitted=AdmitVhdPath $leaf
-                    if ($null -ne $admitted) {
-                        if ($vhdRequests.ContainsKey($admitted)) {if($vhdRequests[$admitted] -notcontains $scope){$vhdRequests[$admitted]+=@($scope)}}
-                        elseif ($vhdRequests.Count -lt 16) {$vhdRequests.Add($admitted,@($scope))}
-                        else {$fields[$name+'MetadataRead']=@{status='skipped-16-path-limit'}}
-                    } elseif($leaf -match '(?i)\.vhdx?$') {$fields[$name+'MetadataRead']=@{status='skipped-path-outside-approved-roots-or-invalid'}}
-                }
             }
-            foreach($name in 'properties,statuses,status,info,provisioning,provisioningStatus,health,healthStatus,powerStatus,operation,error,hardwareProfile,storageProfile,networkProfile,osDisk,dataDisks,networkInterfaces,ipConfigurations,subnets,subnet,addressSpace,ranges,addressRanges,allocation,attachments,vm,vhd,nic,parent,owner,disks,image,network,virtualMachine'.Split(',')) {
-                $member=Member $Value $name;if($member.present){$fields[$name]=Detail $member.value ($Depth+1) $Budget}
+            foreach($name in 'properties,virtualmachineproperties,networkinterfaceproperties,virtualnetworkproperties,tags,statuses,status,info,provisioning,provisioningStatus,health,healthStatus,powerStatus,operation,error,hardwareProfile,storageProfile,networkProfile,osDisk,dataDisks,networkInterfaces,ipConfigurations,subnets,subnet,addressSpace,ranges,addressRanges,allocation,attachments,vm,vhd,nic,parent,owner,disks,image,network,virtualMachine'.Split(',')) {
+                $member=Member $Value $name
+                if($member.present -and $name -ceq 'tags'){
+                    $tagFields=@{}
+                    foreach($key in @('imageId','imagePath','imageSizeBytes','imageSizeInMB','vhdPath','diskId','virtualSizeBytes','sizeBytes','containerId','vmId','virtualMachineId','hyperVVmId','instanceId')){
+                        $tag=Member $member.value $key;if($tag.present){$tagFields[$key]=SafeValue $tag.value}
+                    }
+                    $fields.tags=@{status='management-tags-only';shape=(Shape $member.value);fields=$tagFields};continue
+                }
+                if($member.present){$fields[$name]=Detail $member.value ($Depth+1) $Budget}
             }
             @{status='allowlisted-management-only';fields=$fields;recognisedFieldCount=$fields.Count;unitsNotInferred=$true}
         }
         function ReadReturnedVhds {
             return ,@(foreach($path in $vhdRequests.Keys) {
+                if([DateTimeOffset]::UtcNow -ge $readEnd){@{status='read-end-reached';remainingPathsNotRead=$true};break}
                 try {
                     $directory=[IO.FileInfo]::new($path).Directory
                     while($null -ne $directory){
                         $directory.Refresh()
-                        if(-not $directory.Exists -or (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $directory.FullName -inotmatch '^C:\\ClusterStorage\\(?:UserStorage_[123]|Infrastructure_1)$')){throw 'VHD ancestor missing or redirected outside exact CSV mount points'}
+                        if(-not $directory.Exists -or (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $directory.FullName -inotmatch '^C:\\ClusterStorage\\(?:UserStorage_1|Infrastructure_1)$')){throw 'VHD ancestor missing or redirected outside exact CSV mount points'}
                         $directory=$directory.Parent
                     }
                     $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
@@ -126,6 +128,60 @@ try {
                     @{status='read';path=(SafeValue $path);observedIn=$vhdRequests[$path];id=[string]$disk.DiskIdentifier;maximumBytes=[long]$disk.Size;occupiedFileBytes=[long]$disk.FileSize;vhdType=[string]$disk.VhdType;parentPath=(SafeValue $disk.ParentPath);capacityAdmitted=$false}
                 } catch {@{status='unavailable';path=(SafeValue $path);observedIn=$vhdRequests[$path];errorType=$_.Exception.GetType().FullName;errorCategory=[string]$_.CategoryInfo.Category}}
             })
+        }
+        function RetainTypedJson([string]$Name,$Data) {
+            $path=Join-Path $privateRoot ($Name+'-typed.json');$created=$false
+            try {
+                # Windows PowerShell may silently stringify over-depth values. Reject
+                # unsupported/deep trees before conversion, independently of warnings.
+                $jsonBudget=@{nodes=0}
+                function TestJsonTree($Value,[int]$Depth=0) {
+                    $jsonBudget.nodes++;if($Depth -gt 22 -or $jsonBudget.nodes -gt 65536){return $false}
+                    if($null -eq $Value -or $Value -is [string] -or $Value -is [ValueType]){return $true}
+                    if($Value -is [Collections.IDictionary]){foreach($key in $Value.Keys){if($key -isnot [string] -or -not (TestJsonTree $Value[$key] ($Depth+1))){return $false}}}
+                    elseif($Value -is [Collections.IList]){foreach($item in $Value){if(-not (TestJsonTree $item ($Depth+1))){return $false}}}
+                    elseif($Value -is [pscustomobject]){foreach($property in $Value.PSObject.Properties){if($property.MemberType -ne 'NoteProperty' -or -not (TestJsonTree $property.Value ($Depth+1))){return $false}}}
+                    else{return $false}
+                    $true
+                }
+                if(-not (TestJsonTree $Data)){return @{status='capture-incomplete';reason='unsupported-or-over-bound-JSON-tree';fileCreated=$false;rawValuesExported=$false}}
+                $warnings=@();$json=ConvertTo-Json -InputObject $Data -Depth 24 -Compress -WarningVariable warnings -WarningAction SilentlyContinue
+                if($warnings.Count){return @{status='capture-incomplete';reason='serializer-depth-warning';fileCreated=$false;rawValuesExported=$false}}
+                $bytes=[Text.Encoding]::UTF8.GetBytes($json)
+                if($bytes.Length -gt 1048576){return @{status='capture-incomplete';reason='one-MiB-cap-exceeded';bytes=$bytes.Length;fileCreated=$false;rawValuesExported=$false}}
+                $file=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$created=$true
+                try{$file.Write($bytes,0,$bytes.Length)}finally{$file.Dispose()}
+                @{status='retained-private-JSON';path=$path;bytes=$bytes.Length;sha256=(Digest $bytes);complete=$true;rawValuesExported=$false}
+            } catch {@{status='capture-incomplete';reason='serialization-or-create-only-write-failed';fileCreated=$created;existingFileNeverOverwritten=$true;errorType=$_.Exception.GetType().FullName;rawValuesExported=$false}}
+        }
+        function ReadContainerFiles {
+            $queue=[Collections.Generic.Queue[object]]::new();$entries=[Collections.Generic.List[object]]::new();$issues=@();$bound=$false;$depthBound=$false;$vhdLimit=$false
+            foreach($root in $containerRoots){$queue.Enqueue(@{path=$root;depth=0})}
+            while($queue.Count -and $entries.Count -lt 128){
+                if([DateTimeOffset]::UtcNow -ge $readEnd){$issues+=@{status='read-end-reached'};break}
+                $next=$queue.Dequeue();$iterator=$null
+                try {
+                    $directory=[IO.DirectoryInfo]::new($next.path);$ancestor=$directory
+                    while($null -ne $ancestor){$ancestor.Refresh();if(-not $ancestor.Exists -or (($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $ancestor.FullName -inotmatch '^C:\\ClusterStorage\\(?:UserStorage_1|Infrastructure_1)$')){throw 'Enumeration ancestor invalid'};$ancestor=$ancestor.Parent}
+                    $iterator=$directory.EnumerateFileSystemInfos().GetEnumerator()
+                    while($entries.Count -lt 128 -and $iterator.MoveNext()){
+                        if([DateTimeOffset]::UtcNow -ge $readEnd){$issues+=@{status='read-end-reached'};break}
+                        $item=$iterator.Current;$isDirectory=[bool]($item.Attributes -band [IO.FileAttributes]::Directory);$redirected=[bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint);$depth=$next.depth+1
+                        $row=@{path=(SafeValue $item.FullName);depth=$depth;directory=$isDirectory;reparsePoint=$redirected;lastWriteUtc=$item.LastWriteTimeUtc.ToString('o')}
+                        if(-not $isDirectory -and -not $redirected){$row.fileBytes=$item.Length}
+                        $entries.Add($row)
+                        if($redirected){continue}
+                        if($isDirectory){if($depth -lt 3){$queue.Enqueue(@{path=$item.FullName;depth=$depth})}else{$depthBound=$true};continue}
+                        if($item.Extension -in @('.vhd','.vhdx')){
+                            $path=AdmitVhdPath $item.FullName
+                            if($path -and -not $vhdRequests.ContainsKey($path)){if($vhdRequests.Count -lt 16){$vhdRequests.Add($path,@('enumerated-filesystem-path-only'))}else{$vhdLimit=$true}}
+                        }
+                    }
+                    if($entries.Count -ge 128){$bound=$true}
+                } catch {$issues+=@{path=(SafeValue $next.path);status='metadata-unavailable';errorType=$_.Exception.GetType().FullName}}
+                finally {if($null -ne $iterator -and $iterator -is [IDisposable]){$iterator.Dispose()}}
+            }
+            @{status='bounded-filesystem-metadata-only';entries=$entries.ToArray();entryCount=$entries.Count;entryBoundReached=$bound;depthBoundReached=$depthBound;vhdBoundReached=$vhdLimit;directoriesNotVisited=$queue.Count;issues=$issues;imageOwnership='not-established-by-filenames-or-container-membership';fileContentsRead=$false}
         }
         function ProjectItem($Item) {
             # Fixed management fields only. Missing fields are not absence/zero evidence.
@@ -163,7 +219,7 @@ try {
             @{status='complete';phase=$Name;data=$data;diagnostic=$diagnostic}
         }
         function ClientCall([string]$Name,[scriptblock]$Read) {
-            if ($readBudget.count -ge 14) {throw 'Finite detail getter budget exceeded'}
+            if ($readBudget.count -ge 7 -or [DateTimeOffset]::UtcNow -ge $readEnd) {throw 'Seven-call or read-end bound reached'}
             $readBudget.count++
             $records=[Collections.Generic.List[object]]::new();$failure=$null
             try {& $Read *>&1|ForEach-Object {$records.Add($_)}} catch {$failure=$_}
@@ -223,7 +279,7 @@ try {
                 $pins+=@{path=$path;sha256=$pin[1];signature='Valid';signerThumbprint=$pin[2]}
             }
             if (@(Get-Module -Name Moc).Count) {throw 'Unexpected pre-imported Moc module'}
-            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-03'
+            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-04'
             if (-not (Test-Path -LiteralPath $privateRoot) -or $PSCommandPath -ine (Join-Path $privateRoot 'client-read.ps1')) {throw 'Expected protected fixed client process required'}
             $begin=[IO.File]::Open((Join-Path $privateRoot 'client-began'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$begin.Dispose()
             $privateReady=$true
@@ -237,39 +293,49 @@ try {
             $loaded=@(Get-Module -Name Moc)
             if ($loaded.Count -ne 1 -or [string]$loaded[0].Version -cne '1.2.161' -or [string]$loaded[0].Guid -ine 'f6cfb7b2-99e9-47f7-8000-7390756ee89b') {throw 'Imported Moc identity differs'}
             $location='MocLocation';$groups=@('management','Default_Group')
-            $requests=@(@{kind='containers';envelope='containers'},
+            $requests=@();foreach($group in $groups){$requests+=@(@{kind='nics';envelope='networkInterfaces';group=$group},@{kind='vnets';envelope='virtualNetworks';group=$group})}
+            $requests+=@(
                 @{kind='gallery';envelope='galleryImages';name='appliance-0.1.41.10527-v1.33.5';id='17e1deded2021a00'},
                 @{kind='gallery';envelope='galleryImages';name='linux-cblmariner-0.12.15.10811';id='17d4332062ff03a3'},
-                @{kind='vip-pools';envelope='vipPools'})
-            foreach($group in $groups){$requests+=@(@{kind='vms';envelope='virtualMachines';group=$group},@{kind='vhds';envelope='virtualHardDisks';group=$group})}
-            $skipped=@(foreach($group in $groups){foreach($command in @('Get-MocNetworkInterface','Get-MocVirtualNetwork')){@{command=$command;group=$group;status='skipped';reason='Qualified declaration has no timeoutSeconds parameter; no invented parameter or unbounded call'}}})
+                @{kind='vm';envelope='virtualMachines';group='management';name='32c9b21328b3df180e0d814a8afe5134fa140c2909569-control-plane-0';id='19c1d77215d4b74'})
             $incomplete=$false;$index=0
+            $vmJoin=@{status='not-established';mocVmId='19c1d77215d4b74';hyperVVmIdFromPriorObservation='4c6ca5cc-8c9a-499b-8ffe-c029bbfd3522';evidence=@();namesAreNotIdentityProof=$true}
             foreach($request in $requests) {
                 $phase=$request.kind;$scope=$location+'/'+$request.group+'/'+$phase+'/'+$request.name
                 $captureName='detail-'+$index+'-'+$phase;$index++
                 $call=switch($phase){
-                    'containers' {ClientCall $captureName {Get-MocContainer -location $location -timeoutSeconds 20 -ErrorAction Stop}}
+                    'nics' {ClientCall $captureName {Get-MocNetworkInterface -group $request.group -ErrorAction Stop}}
+                    'vnets' {ClientCall $captureName {Get-MocVirtualNetwork -group $request.group -ErrorAction Stop}}
                     'gallery' {ClientCall $captureName {Get-MocGalleryImage -name $request.name -location $location -timeoutSeconds 20 -ErrorAction Stop}}
-                    'vip-pools' {ClientCall $captureName {Get-MocVipPool -location $location -timeoutSeconds 20 -ErrorAction Stop}}
-                    'vms' {ClientCall $captureName {Get-MocVirtualMachine -group $request.group -timeoutSeconds 20 -ErrorAction Stop}}
-                    'vhds' {ClientCall $captureName {Get-MocVirtualHardDisk -group $request.group -timeoutSeconds 20 -ErrorAction Stop}}
+                    'vm' {ClientCall $captureName {Get-MocVirtualMachine -name $request.name -group $request.group -timeoutSeconds 20 -ErrorAction Stop}}
                 }
                 $entry=@{phase=$phase;location=$location;group=$request.group;requestedName=$request.name;status=$call.status;diagnostic=$call.diagnostic}
                 $calls+=,$entry
                 if($call.status -cne 'complete'){$entry.failure=$call;$incomplete=$true;continue}
+                if($phase -cin @('gallery','vm')){
+                    $entry.rawTypedCapture=RetainTypedJson $captureName $call.data
+                    if($entry.rawTypedCapture.status -cne 'retained-private-JSON'){$incomplete=$true}
+                }
                 $entry.pipelineShapes=@($call.data|Select-Object -First 64|ForEach-Object {Shape $_})
                 try {$items=Items $call $request.envelope} catch {$entry.status='unsupported-shape';$incomplete=$true;continue}
-                if($phase -ceq 'gallery' -and ($items.Count -ne 1 -or (Member $items[0] 'name').value -cne $request.name -or (Member $items[0] 'id').value -cne $request.id)) {
-                    $entry.status='named-gallery-identity-mismatch';$incomplete=$true;continue
-                }
+                if($request.id -and ($items.Count -ne 1 -or (Member $items[0] 'id').value -cne $request.id -or (Member $items[0] 'name').value -cne $request.name)){$entry.status='named-identity-mismatch';$incomplete=$true;continue}
                 if(@($items|Where-Object {
                     $returnedLocation=Member $_ 'location';$returnedGroup=Member $_ 'group'
                     ($returnedLocation.present -and $returnedLocation.value -cne $location) -or ($request.group -and $returnedGroup.present -and $returnedGroup.value -cne $request.group)
                 }).Count){$entry.status='returned-scope-mismatch';$incomplete=$true;continue}
                 $entry.count=$items.Count;$entry.items=@($items|ForEach-Object {ProjectItem $_})
+                if($phase -ceq 'vm'){
+                    foreach($path in @('virtualmachineproperties.id','virtualmachineproperties.vmId','virtualmachineproperties.virtualMachineId','virtualmachineproperties.hyperVVmId','virtualmachineproperties.instanceId','tags.vmId','tags.virtualMachineId','tags.hyperVVmId','tags.instanceId')){
+                        $value=$items[0];foreach($part in $path.Split('.')){$value=(Member $value $part).value}
+                        $guid=[guid]::Empty
+                        if($value -is [string] -and [guid]::TryParse($value,[ref]$guid) -and $guid -eq [guid]$vmJoin.hyperVVmIdFromPriorObservation){$vmJoin.status='explicit-returned-identity-match';$vmJoin.evidence+=@{field=$path;returnedId=$value}}
+                    }
+                }
             }
+            $filesystem=ReadContainerFiles
             $vhdMetadata=ReadReturnedVhds
-            @{status=$(if($incomplete -or $skipped.Count){'scope-incomplete-stop'}else{'complete'});atUtc=[DateTime]::UtcNow.ToString('o');location=$location;groups=$groups;getterCalls=$readBudget.count;skipped=$skipped;vhdMetadata=$vhdMetadata;vhdReadStatus=$(if($vhdRequests.Count){'only-returned-admitted-paths'}else{'no-returned-admitted-VHD-paths'});deploymentLocationSelected=$false;pins=$pins;calls=$calls;
+            $incomplete=$incomplete -or $filesystem.entryBoundReached -or $filesystem.depthBoundReached -or $filesystem.vhdBoundReached -or $filesystem.issues.Count -gt 0 -or @($vhdMetadata|Where-Object {$_.status -cne 'read'}).Count -gt 0
+            @{status=$(if($incomplete){'scope-incomplete-stop'}else{'complete'});atUtc=[DateTime]::UtcNow.ToString('o');location=$location;groups=$groups;getterCalls=$readBudget.count;filesystem=$filesystem;vhdMetadata=$vhdMetadata;MocToHyperVIdentityJoin=$vmJoin;imageFileOwnership='not-established-by-file-or-image-name';deploymentLocationSelected=$false;pins=$pins;calls=$calls;
               runtimePermissionUsed='existing-client-auth-cache-log-environment-and-idempotent-read-retry';resourceWritesRequested=$false;
               imageAllocationOrCapacityAdmitted=$false;rawStreamsExported=$false}
         } catch {
@@ -285,7 +351,7 @@ try {
     }
     # One fixed child, not a general dispatcher: catches vendor Out-Default/console output.
     $clientSource="function Invoke-FixedMocRead {`n"+$runtime.ToString()+"`n}`n"+
-        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261110-03\result.json'',($safe|ConvertTo-Json -Depth 24 -Compress),[Text.UTF8Encoding]::new($false))'
+        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261110-04\result.json'',($safe|ConvertTo-Json -Depth 24 -Compress),[Text.UTF8Encoding]::new($false))'
     $result=Invoke-Command -Session $session -ArgumentList $clientSource -ErrorAction Stop -ScriptBlock {
         param([string]$ClientSource)
         $ErrorActionPreference='Stop'
@@ -360,18 +426,20 @@ try {
             (Get-FileHash -LiteralPath (Join-Path $previousRoot 'result.json')).Hash -ine 'f2c667d72b6028d19a7728a6d70a43ed31b955cc0ab6fe62af2bda51e037dfd8' -or $previous.safeResultStatus -cne 'scope-incomplete-stop') {
             return @{status='blocked-previous-result-lineage-or-process';original=$original;previous=$previous;retryAllowed=$false}
         }
-        $completedRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-02'
+        $completedRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-03'
         $completed=Read-OriginalMocState $completedRoot
         $completedRecord=Get-Content -LiteralPath (Join-Path $completedRoot 'process.json') -Raw|ConvertFrom-Json
         if ($completed.readComplete -ne $true -or $completed.matchingProcesses.Count -ne 0 -or $completed.unreadablePowerShellCommandLineCount -ne 0 -or
-            $completedRecord.pid -ne 8400 -or $completedRecord.status -cne 'exited' -or ($completedRecord.exitCode -isnot [int] -and $completedRecord.exitCode -isnot [long]) -or $completedRecord.exitCode -ne 0 -or
-            $completedRecord.sourceSha256 -cne 'b572f0de84d02413289a6096cd0a87d1fcb394cc693d929d5bdf5acd5bc26c6f' -or
-            ([DateTimeOffset]$completedRecord.processStartedUtc).UtcDateTime.Ticks -ne ([DateTimeOffset]::Parse('2026-11-10T07:56:35.6782466Z')).UtcDateTime.Ticks -or
-            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'client-read.ps1')).Hash -ine 'b572f0de84d02413289a6096cd0a87d1fcb394cc693d929d5bdf5acd5bc26c6f' -or
-            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'result.json')).Hash -ine '8fa34abc256a0a462981351b07f465991b76f070c0bc5d73ea770ba77ff45c58' -or $completed.safeResultStatus -cne 'complete') {
+            $completedRecord.pid -ne 14596 -or $completedRecord.status -cne 'exited' -or ($completedRecord.exitCode -isnot [int] -and $completedRecord.exitCode -isnot [long]) -or $completedRecord.exitCode -ne 0 -or
+            $completedRecord.sourceSha256 -cne '9df1b9cb0cb355dcc29a59f41bdf900f2bd42e9a1499c2f7c21e949b566d2e97' -or
+            ([DateTimeOffset]$completedRecord.processStartedUtc).UtcDateTime.Ticks -ne ([DateTimeOffset]::Parse('2026-11-10T09:02:59.0631610Z')).UtcDateTime.Ticks -or
+            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'client-read.ps1')).Hash -ine '9df1b9cb0cb355dcc29a59f41bdf900f2bd42e9a1499c2f7c21e949b566d2e97' -or
+            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'result.json')).Hash -ine '4eb3b9586fcc0f811c17072e96d2aa7f219fff8d0327e7dfd10dabd8632cfeba' -or $completed.safeResultStatus -cne 'scope-incomplete-stop') {
             return @{status='blocked-completed-read-lineage-or-process';original=$original;previous=$previous;completed=$completed;retryAllowed=$false}
         }
-        $root='C:\ProgramData\AzureLocalBox\MocRead-20261110-03'
+        $remaining=[int][Math]::Floor(([DateTimeOffset]::Parse('2026-11-10T11:45:00+02:00')-[DateTimeOffset]::UtcNow).TotalSeconds)
+        if($remaining -le 0){return @{status='blocked-read-end-passed';completed=$completed;retryAllowed=$false}}
+        $root='C:\ProgramData\AzureLocalBox\MocRead-20261110-04'
         if (Test-Path -LiteralPath $root) {return @{status='blocked-new-root-already-exists';original=$original;previous=$previous;retryAllowed=$false}}
         New-ProtectedMocDirectory $root
         $script=Join-Path $root 'client-read.ps1';[IO.File]::WriteAllText($script,$ClientSource,[Text.UTF8Encoding]::new($false))
@@ -380,7 +448,8 @@ try {
         $handle=$process.Handle # Retain the native process handle before waiting for exit.
         $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root;original=$original;completed=$completed}
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
-        if (-not $process.WaitForExit(360000)) {
+        $waitMilliseconds=[Math]::Max(0,[int](([DateTimeOffset]::Parse('2026-11-10T11:45:00+02:00')-[DateTimeOffset]::UtcNow).TotalMilliseconds))
+        if (-not $process.WaitForExit([Math]::Min(360000,$waitMilliseconds))) {
             $record.status='uncertain-client-still-running-do-not-retry'
             [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress));return $record
         }
