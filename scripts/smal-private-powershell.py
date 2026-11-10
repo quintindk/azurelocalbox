@@ -516,6 +516,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
     record['renderedSourceByteLength'] = len(source)
     record['unstreamedEncodedLength'] = original_encoded_length
     guest_timeout = {'scripts/prepare-smal-host-hyperv.ps1': 600,
+                     'scripts/resume-smal-rolling02-original-worker.ps1': 600,
                      'scripts/read-smal-network-precreate.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline.ps1': 300,
                      'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
