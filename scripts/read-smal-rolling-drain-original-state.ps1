@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 if($env:COMPUTERNAME -cne 'LocalBox-Client'){throw 'Wrong outer host'}
-$end=[DateTimeOffset]::Parse('2026-11-10T15:25:00+02:00')
+$end=[DateTimeOffset]::Parse('2026-11-10T15:27:00+02:00')
 if([DateTimeOffset]::UtcNow -ge $end){throw 'Original-state read window closed'}
 $root='C:\ProgramData\AzureLocalBox\FoundationProfile-20261109-01'
 $worker=Join-Path $root 'worker-drain-LB-NODE02.ps1'
