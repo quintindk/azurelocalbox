@@ -20,7 +20,7 @@ try {
     $phase='vendor-client-read'
     $runtime={
         $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
-        $phase='guest-identity';$privateRoot=$null;$privateReady=$false;$calls=@();$pins=@()
+        $phase='guest-identity';$privateRoot=$null;$privateReady=$false;$calls=@();$pins=@();$readBudget=@{count=0}
         function Digest([byte[]]$Bytes) {
             $h=[Security.Cryptography.SHA256]::Create()
             try {[BitConverter]::ToString($h.ComputeHash($Bytes)).Replace('-','').ToLowerInvariant()} finally {$h.Dispose()}
@@ -70,6 +70,10 @@ try {
                     $member=Member $Item $name
                     if ($member.present) {@{name=$name;shape=(Shape $member.value ($Depth+1))}}
                 })
+                $shape.structures=@(foreach($name in @('properties','status')) {
+                    $member=Member $Item $name
+                    if ($member.present) {@{name=$name;shape=(Shape $member.value ($Depth+1))}}
+                })
             }
             $shape
         }
@@ -109,23 +113,50 @@ try {
             @{status='complete';phase=$Name;data=$data;diagnostic=$diagnostic}
         }
         function ClientCall([string]$Name,[scriptblock]$Read) {
+            if ($readBudget.count -ge 10) {throw 'Finite inventory getter budget exceeded'}
+            $readBudget.count++
             $records=[Collections.Generic.List[object]]::new();$failure=$null
             try {& $Read *>&1|ForEach-Object {$records.Add($_)}} catch {$failure=$_}
             SaveCapture $Name $records $failure
         }
+        function OuterItems($Value) {
+            $flat=[Collections.Generic.List[object]]::new();$limit=@{visited=0}
+            function AddOuter($Value,[int]$Depth) {
+                $limit.visited++;if ($limit.visited -gt 256) {throw 'Outer collection traversal bound exceeded'}
+                if ($Value -is [Collections.IList] -and $Value -isnot [Collections.IDictionary]) {
+                    if ($Depth -ge 4 -or $Value.Count -gt 64) {throw 'Outer collection depth/count exceeded'}
+                    foreach($entry in $Value) {AddOuter $entry ($Depth+1)}
+                } else {
+                    if ($flat.Count -ge 64) {throw 'Normalised item count exceeded'}
+                    $flat.Add($Value)
+                }
+            }
+            AddOuter $Value 0
+            return ,$flat.ToArray()
+        }
         function Items($Call,[string]$Envelope) {
-            $data=@($Call.data)
+            $data=OuterItems $Call.data
             for($depth=0;$depth -lt 3 -and $data.Count -eq 1;$depth++) {
                 $members=@(@('value',$Envelope)|Select-Object -Unique|ForEach-Object {Member $data[0] $_}|Where-Object {$_.present})
                 if ($members.Count -gt 1) {throw 'Ambiguous vendor collection envelope'}
                 if ($members.Count -eq 0) {break}
                 $collection=$members[0].value
-                if ($null -ne $collection -and ($collection -is [string] -or $collection -is [Collections.IDictionary] -or $collection -isnot [Collections.IEnumerable])) {throw 'Vendor envelope is not a collection'}
-                $data=@();if ($null -ne $collection) {$data=@($collection)}
+                if ($null -eq $collection -or $collection -is [Collections.IDictionary] -or $collection -isnot [Collections.IList]) {throw 'Vendor envelope is not an explicit array/list'}
+                $data=OuterItems $collection
             }
             if ($data.Count -gt 64 -or @($data|Where-Object {$null -eq $_ -or $_ -is [string] -or $_ -is [ValueType]}).Count) {throw 'Unsupported or oversized vendor result shape'}
             if ($data.Count -eq 1 -and ((Member $data[0] 'value').present -or (Member $data[0] $Envelope).present)) {throw 'Vendor envelope depth exceeded'}
             return ,$data
+        }
+        function LocationNames($Locations) {
+            if ($Locations.Count -lt 1 -or $Locations.Count -gt 3) {throw 'Inventory requires 1-3 actual locations'}
+            $names=[Collections.Generic.List[string]]::new()
+            foreach($item in $Locations) {
+                $name=(Member $item 'name').value
+                if ($name -isnot [string] -or $name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' -or (SafeValue $name).status -cne 'reported' -or $names -icontains $name) {throw 'Actual location names invalid or duplicated'}
+                $names.Add($name)
+            }
+            return ,$names.ToArray()
         }
         try {
             if ($env:COMPUTERNAME -cne 'LB-NODE01') {throw 'Unexpected guest'}
@@ -152,7 +183,7 @@ try {
                 $pins+=@{path=$path;sha256=$pin[1];signature='Valid';signerThumbprint=$pin[2]}
             }
             if (@(Get-Module -Name Moc).Count) {throw 'Unexpected pre-imported Moc module'}
-            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-01'
+            $privateRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-02'
             if (-not (Test-Path -LiteralPath $privateRoot) -or $PSCommandPath -ine (Join-Path $privateRoot 'client-read.ps1')) {throw 'Expected protected fixed client process required'}
             $begin=[IO.File]::Open((Join-Path $privateRoot 'client-began'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read);$begin.Dispose()
             $privateReady=$true
@@ -174,26 +205,30 @@ try {
                 return @{status='scope-incomplete-stop';reason='Actual location pipeline shape unsupported; inspect safe CLR structure and node-private display capture';pins=$pins;calls=$calls;rawStreamsExported=$false}
             }
             $locationCall.count=$locations.Count;$locationCall.items=@($locations|ForEach-Object {ProjectItem $_})
-            $location=$null
-            if ($locations.Count -eq 1) {$location=(Member $locations[0] 'name').value}
-            if ($location -isnot [string] -or $location -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' -or (SafeValue $location).status -cne 'reported') {return @{status='scope-incomplete-stop';reason='Unique actual lab location name not established';pins=$pins;calls=$calls}}
+            try {$locationNames=LocationNames $locations} catch {return @{status='scope-incomplete-stop';reason='Require 1-3 distinct valid actual location names';pins=$pins;calls=$calls;rawStreamsExported=$false}}
+            $locationIndex=0
+            foreach($location in $locationNames) {
             foreach($name in @('gallery-images','containers','groups')) {
                 $phase=$name
+                $captureName='location-'+$locationIndex+'-'+$name
                 $call=switch($name){
-                    'gallery-images' {ClientCall $name {Get-MocGalleryImage -location $location -timeoutSeconds 20 -ErrorAction Stop}}
-                    'containers' {ClientCall $name {Get-MocContainer -location $location -timeoutSeconds 20 -ErrorAction Stop}}
-                    'groups' {ClientCall $name {Get-MocGroup -location $location -timeoutSeconds 20 -ErrorAction Stop}}
+                    'gallery-images' {ClientCall $captureName {Get-MocGalleryImage -location $location -timeoutSeconds 20 -ErrorAction Stop}}
+                    'containers' {ClientCall $captureName {Get-MocContainer -location $location -timeoutSeconds 20 -ErrorAction Stop}}
+                    'groups' {ClientCall $captureName {Get-MocGroup -location $location -timeoutSeconds 20 -ErrorAction Stop}}
                 }
-                if ($call.status -cne 'complete') {return @{status='failed';failure=$call;pins=$pins;calls=$calls}}
+                if ($call.status -cne 'complete') {return @{status='failed';location=(SafeValue $location);failure=$call;pins=$pins;calls=$calls}}
                 $envelope=switch($name){'gallery-images' {'galleryImages'} 'containers' {'containers'} 'groups' {'groups'}}
-                $managementCall=@{phase=$phase;status='complete';pipelineRecordCount=@($call.data).Count;pipelineShapesComplete=(@($call.data).Count -le 64);pipelineShapes=@($call.data|Select-Object -First 64|ForEach-Object {Shape $_});diagnostic=$call.diagnostic}
+                $managementCall=@{phase=$phase;location=(SafeValue $location);status='complete';pipelineRecordCount=@($call.data).Count;pipelineShapesComplete=(@($call.data).Count -le 64);pipelineShapes=@($call.data|Select-Object -First 64|ForEach-Object {Shape $_});diagnostic=$call.diagnostic}
                 $calls+=,$managementCall
                 try {$items=Items $call $envelope} catch {
                     return @{status='scope-incomplete-stop';reason='Actual management pipeline shape unsupported; inspect safe CLR structure and node-private display capture';pins=$pins;calls=$calls;rawStreamsExported=$false}
                 }
                 $managementCall.count=$items.Count;$managementCall.items=@($items|ForEach-Object {ProjectItem $_})
+                if (@($managementCall.items|Where-Object {$_.fields.Count -eq 0}).Count) {return @{status='scope-incomplete-stop';reason='Management item has no recognised fixed fields';pins=$pins;calls=$calls;rawStreamsExported=$false}}
             }
-            @{status='complete';atUtc=[DateTime]::UtcNow.ToString('o');location=(SafeValue $location);pins=$pins;calls=$calls;
+            $locationIndex++
+            }
+            @{status='complete';atUtc=[DateTime]::UtcNow.ToString('o');locations=@($locationNames|ForEach-Object {SafeValue $_});getterCalls=$readBudget.count;deploymentLocationSelected=$false;pins=$pins;calls=$calls;
               runtimePermissionUsed='existing-client-auth-cache-log-environment-and-idempotent-read-retry';resourceWritesRequested=$false;
               imageAllocationOrCapacityAdmitted=$false;rawStreamsExported=$false}
         } catch {
@@ -209,7 +244,7 @@ try {
     }
     # One fixed child, not a general dispatcher: catches vendor Out-Default/console output.
     $clientSource="function Invoke-FixedMocRead {`n"+$runtime.ToString()+"`n}`n"+
-        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261110-01\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
+        '$safe=Invoke-FixedMocRead;[IO.File]::WriteAllText(''C:\ProgramData\AzureLocalBox\MocRead-20261110-02\result.json'',($safe|ConvertTo-Json -Depth 20 -Compress),[Text.UTF8Encoding]::new($false))'
     $result=Invoke-Command -Session $session -ArgumentList $clientSource -ErrorAction Stop -ScriptBlock {
         param([string]$ClientSource)
         $ErrorActionPreference='Stop'
@@ -284,16 +319,27 @@ try {
             (Get-FileHash -LiteralPath (Join-Path $previousRoot 'result.json')).Hash -ine 'f2c667d72b6028d19a7728a6d70a43ed31b955cc0ab6fe62af2bda51e037dfd8' -or $previous.safeResultStatus -cne 'scope-incomplete-stop') {
             return @{status='blocked-previous-result-lineage-or-process';original=$original;previous=$previous;retryAllowed=$false}
         }
-        $root='C:\ProgramData\AzureLocalBox\MocRead-20261110-01'
+        $completedRoot='C:\ProgramData\AzureLocalBox\MocRead-20261110-01'
+        $completed=Read-OriginalMocState $completedRoot
+        $completedRecord=Get-Content -LiteralPath (Join-Path $completedRoot 'process.json') -Raw|ConvertFrom-Json
+        if ($completed.readComplete -ne $true -or $completed.matchingProcesses.Count -ne 0 -or $completed.unreadablePowerShellCommandLineCount -ne 0 -or
+            $completedRecord.pid -ne 13988 -or $completedRecord.status -cne 'exited' -or ($completedRecord.exitCode -isnot [int] -and $completedRecord.exitCode -isnot [long]) -or $completedRecord.exitCode -ne 0 -or
+            $completedRecord.sourceSha256 -cne '8112c42d9af69eafcc186070864aa82fd61c56a5a8e903c2f6d178a0916573ce' -or
+            ([DateTimeOffset]$completedRecord.processStartedUtc).UtcDateTime.Ticks -ne ([DateTimeOffset]::Parse('2026-11-10T07:15:53.2325646Z')).UtcDateTime.Ticks -or
+            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'client-read.ps1')).Hash -ine '8112c42d9af69eafcc186070864aa82fd61c56a5a8e903c2f6d178a0916573ce' -or
+            (Get-FileHash -LiteralPath (Join-Path $completedRoot 'result.json')).Hash -ine 'dedd9359498911bd8fc09c060065d50e2abc219e1ba321d3e25d9b950c21f814' -or $completed.safeResultStatus -cne 'scope-incomplete-stop') {
+            return @{status='blocked-completed-read-lineage-or-process';original=$original;previous=$previous;completed=$completed;retryAllowed=$false}
+        }
+        $root='C:\ProgramData\AzureLocalBox\MocRead-20261110-02'
         if (Test-Path -LiteralPath $root) {return @{status='blocked-new-root-already-exists';original=$original;previous=$previous;retryAllowed=$false}}
         New-ProtectedMocDirectory $root
         $script=Join-Path $root 'client-read.ps1';[IO.File]::WriteAllText($script,$ClientSource,[Text.UTF8Encoding]::new($false))
         $sourceSha=(Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant()
         $process=Start-Process -FilePath powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$script) -RedirectStandardOutput (Join-Path $root 'client.stdout') -RedirectStandardError (Join-Path $root 'client.stderr') -PassThru
         $handle=$process.Handle # Retain the native process handle before waiting for exit.
-        $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root;original=$original}
+        $record=@{status='running';pid=$process.Id;processStartedUtc=$process.StartTime.ToUniversalTime().ToString('o');sourceSha256=$sourceSha;retryAllowed=$false;privateRoot=$root;original=$original;completed=$completed}
         [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress))
-        if (-not $process.WaitForExit(75000)) {
+        if (-not $process.WaitForExit(240000)) {
             $record.status='uncertain-client-still-running-do-not-retry'
             [IO.File]::WriteAllText((Join-Path $root 'process.json'),($record|ConvertTo-Json -Compress));return $record
         }
