@@ -46,18 +46,45 @@ input pins and an unsealed plan. It installs nothing. `capsule --plan PATH --sta
 --source-commit HASH --mode dispatch|observe` prints the existing capsule result as JSON.
 Dispatch assembly requires the unchanged sealed operation plus fresh stage proof.
 The plan's original approval and expiry remain immutable. The new proposal is bounded
-by 15:00 SAST on 10 November 2026, but its GO is false and expiry remains null.
+by 15:20 SAST on 10 November 2026, but its GO is false and expiry remains null.
+The GET qualifier and baseline reader still end at 15:00 SAST.
 
 `qualifier` emits the fixed GET-only `scripts/read-smal-rolling-moc-contract.ps1` source.
-Parent publishes it before any native read. It checks only the three documented commands,
-their installed modules/source hashes, complete parameter-set/mandatory-parameter shapes
-and actual exact NodeName membership on each of the three known machines. Unsupported
-or ambiguous metadata returns unqualified facts without calling a mutation. No module
-name, missing node, extra parameter or bootstrap action is inferred.
+Parent publishes it before any native read. It checks only the installed Get-MocNode,
+Remove-MocPhysicalNode and New-MocPhysicalNode contracts on the three known machines.
+The observed module is Moc 1.2.161, file SHA-256
+`b9dbda4ab8c0ce6c77d8fa219a153983114afc859f5bb10689f6f3cf71025b7f`.
+Parameter-name comparisons follow PowerShell's case-insensitive binding, while the
+recorded parameter spellings and signature hashes remain unchanged. No absent
+Get-MocPhysicalNode command or invented alternative is used.
 
-Copy a successful qualifier's `nodes` into the immutable plan's `mocContract.nodes`
-only after review. Require initial membership of exactly the known three nodes on all
-observers. Fresh phase proof must bind actual `mocMembers`, `mocContractQualified`, and
+Retained installed declarations support exactly `Get-MocNode -location MocLocation
+-timeoutSeconds 20`. The qualifier verifies those declared bindings before invoking it
+once on Running NODE02. NODE03/01 collect installed metadata only. This avoids repeated
+data reads. No membership API/auth-readiness claim is made for those two observers.
+Every future effect still requires a successful fresh read from its Running observer.
+
+Actual typed list/array results use the already-qualified bounded Items rules. Strings
+and dictionary keys never become nodes. Returned name/ID/type/path spellings are kept
+in a bounded safe management projection. Raw JSON-compatible returned data is retained
+create-only under a node-local diagnostic directory with the existing protected bootstrap
+ACL, capped at one MiB with explicit incomplete-capture status. No raw vendor data or
+credential value is exported. A capture failure does not discard the safe projection.
+Vendor streams are retained privately as a separate diagnostic with explicit truncation
+metadata. They are never parsed into nodes or exported as raw text.
+
+The result deliberately does not guess whether `name`, `NodeName` or another property
+identifies the Windows machine. Unknown shape/identity blocks CUD but returns useful
+projection/capture metadata. After inspecting actual evidence, parent binds
+`mocContract.membershipIdentity` with the exact observed `fieldPath`, `semantics` set to
+`WindowsComputerName`, `location` set to `MocLocation`, and the actual evidence SHA-256.
+Set `mocContract.nodes` to the actual installed-binding rows and `initialMembership` to
+NODE02's actual returned observation. `moc_contract_preflight` derives initial membership
+from those recorded fields without changing native values. It requires exactly the three
+known names and preserves provider IDs. Case-only Windows name matching requires that
+explicit semantics binding. FQDN stripping, GUID translation and guessed fields refuse.
+
+Fresh phase proof must bind actual `mocMembers`, `mocContractQualified`, and
 the exact `previousStage` with `previousEffectIndependentlySettled=true`. It must still
 satisfy every existing health, profile, volume, permission and 300-second freshness gate.
 `resume` and `moc-add` use selected return-to-service context, not a destructive outage's

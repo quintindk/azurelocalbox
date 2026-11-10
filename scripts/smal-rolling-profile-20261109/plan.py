@@ -7,7 +7,7 @@ GIB=1<<30
 IDS={'LB-DC01':'f94c71f1-6854-48b9-a9f1-8238c99366d0','LB-NODE01':'3adff629-2f67-449b-ab32-8a8748c46f34','LB-NODE02':'12a44e0c-cc08-4c4c-a812-fa0b56efdbc3','LB-NODE03':'5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9'}
 TARGETS={'LB-NODE01':{'cpu':16,'memory':64*GIB},'LB-NODE02':{'cpu':20,'memory':96*GIB},'LB-NODE03':{'cpu':20,'memory':96*GIB}}
 ORDER=('LB-NODE02','LB-NODE03','LB-NODE01')
-MOC_COMMANDS=('Get-MocPhysicalNode','Remove-MocPhysicalNode','New-MocPhysicalNode')
+MOC_COMMANDS=('Get-MocNode','Remove-MocPhysicalNode','New-MocPhysicalNode')
 INFRA='4c6ca5cc-8c9a-499b-8ffe-c029bbfd3522'
 
 
@@ -47,7 +47,7 @@ def stages():
 def candidate():
     return {'operationId':'smal-foundation-profile-20261109-01','schemaVersion':1,'guestIds':IDS,
         'targetProfiles':TARGETS,'transitionContract':{'version':4,'stages':stages(),'deviceOwners':None},
-        'mocContract':None,'maximumExecutionDeadline':'2026-11-10T15:00:00+02:00',
+        'mocContract':None,'maximumExecutionDeadline':'2026-11-10T15:20:00+02:00',
         'baseline':None,'admission':None,'executionApproval':{'parentGo':False,'expiresAt':None},
         'retainedRootsMustBeAbsentOrSeparatelyReconciled':True,
         'profileSupportBasis':'measured Gen2/version12, nested=true, max32 processors/vNUMA, fixed RAM, maximum1TiB; official Hyper-V 2025 Gen2 limits exceed targets',
@@ -71,7 +71,7 @@ def execution_preflight(plan,stage,proof,now=None):
     require(stage in plan['transitionContract']['stages'],'Unknown effect stage')
     require(plan['executionApproval']['parentGo'] is True,'No execution GO')
     expiry=datetime.fromisoformat(plan['executionApproval']['expiresAt']);require(expiry.tzinfo is not None and now<expiry,'Expired/malformed execution GO')
-    require(plan['maximumExecutionDeadline']=='2026-11-10T15:00:00+02:00' and expiry<=datetime.fromisoformat(plan['maximumExecutionDeadline']),'GO exceeds fixed proposed phase bound')
+    require(plan['maximumExecutionDeadline']=='2026-11-10T15:20:00+02:00' and expiry<=datetime.fromisoformat(plan['maximumExecutionDeadline']),'GO exceeds fixed proposed phase bound')
     require(plan['baseline'] and plan['admission'] and len(plan['transitionContract']['deviceOwners'] or {})==24,'Fresh sealed identities/owners/admission missing')
     require(all(sum(owner==node for owner in plan['transitionContract']['deviceOwners'].values())==8 for node in ORDER),'Exactly eight devices per HCI owner required')
     require(proof['originalOperationsReconciled'] and proof['retainedRootsAbsent'],'Original remote operations/root history unresolved')
@@ -101,21 +101,48 @@ def execution_preflight(plan,stage,proof,now=None):
 
 def moc_contract_preflight(contract):
     require(isinstance(contract,dict) and set(contract.get('nodes',{}))==set(ORDER),'Exact three-node installed MOC contract missing')
+    identity=contract.get('membershipIdentity')
+    require(isinstance(identity,dict) and identity.get('semantics')=='WindowsComputerName' and identity.get('location')=='MocLocation','Reviewed actual membership identity semantics/location missing')
+    path=identity.get('fieldPath')
+    require(isinstance(path,list) and 1<=len(path)<=3 and all(isinstance(p,str) and p for p in path),'Actual observed membership field path missing')
+    pin=identity.get('evidenceSha256')
+    require(isinstance(pin,str) and len(pin)==64 and all(c in '0123456789abcdef' for c in pin),'Membership shape evidence pin missing')
+    initial=contract.get('initialMembership')
+    require(isinstance(initial,dict) and membership_names(initial,identity)==sorted(ORDER),'Initial actual three-node MOC membership not observed')
     for node,row in contract['nodes'].items():
-        require(row.get('qualified') is True and row.get('observerNode')==node,'MOC qualifier node identity differs')
-        require(row.get('membershipObserved') is True and row.get('members')==sorted(ORDER),'Initial actual three-node MOC membership not observed')
+        require(row.get('bindingsQualified') is True and row.get('observerNode')==node,'MOC qualifier node identity/bindings differ')
         require(set(row.get('commands',{}))==set(MOC_COMMANDS),'Exact MOC command set missing')
         for name,command in row['commands'].items():
             require(command.get('name')==name and command.get('commandType') in ('Function','Cmdlet'),'Unsupported MOC command binding')
             require(command.get('moduleName') and command.get('moduleVersion') and command.get('modulePath'),'Installed MOC module identity missing')
+            require(command['moduleName']=='Moc' and command['moduleVersion']=='1.2.161' and command.get('moduleSha256')=='b9dbda4ab8c0ce6c77d8fa219a153983114afc859f5bb10689f6f3cf71025b7f','Observed Moc 1.2.161 module pin differs')
             require(all(isinstance(command.get(k),str) and len(command[k])==64 and all(c in '0123456789abcdef' for c in command[k]) for k in ('moduleSha256','definitionSha256','contractSha256')),'Installed MOC source/signature hashes missing')
             sets=command.get('parameterSets',[])
-            if name=='Get-MocPhysicalNode':
-                valid=[s for s in sets if not any(p['mandatory'] for p in s['parameters'])]
+            if name=='Get-MocNode':
+                valid=[s for s in sets if any(p['name'].casefold()=='location' and p['type']=='System.String' for p in s['parameters']) and any(p['name'].casefold()=='timeoutseconds' and p['type']=='System.Int32' for p in s['parameters']) and all(not p['mandatory'] or p['name'].casefold()=='location' for p in s['parameters'])]
             else:
-                valid=[s for s in sets if any(p['name']=='NodeName' and p['type'] in ('System.String','System.String[]') for p in s['parameters']) and all(not p['mandatory'] or p['name']=='NodeName' for p in s['parameters'])]
-            require(len(valid)==1 or (len(valid)>1 and sum(s.get('isDefault') is True for s in valid)==1),'Official no-extra-argument/NodeName-only MOC signature unsupported or ambiguous: '+name)
+                valid=[s for s in sets if any(p['name'].casefold()=='nodename' and p['type'] in ('System.String','System.String[]') for p in s['parameters']) and all(not p['mandatory'] or p['name'].casefold()=='nodename' for p in s['parameters'])]
+            require(len(valid)==1 or (len(valid)>1 and sum(s.get('isDefault') is True for s in valid)==1),'Observed location/timeout or nodeName MOC signature unsupported or ambiguous: '+name)
+    observer=initial.get('observerNode')
+    require(observer in ORDER and initial.get('bindingsQualified') is True and initial.get('commands')==contract['nodes'][observer]['commands'],'Initial membership/installed-binding observation does not join')
     return True
+
+
+def membership_names(observation,identity):
+    require(observation.get('membershipDataRead') is True and observation.get('projectionComplete') is True,'Actual bounded membership data missing/unsupported')
+    require(observation.get('location')=='MocLocation','Actual membership scope differs')
+    names=[]
+    for row in observation.get('records',[]):
+        fields=[f for f in row.get('fields',[]) if f['path']==identity['fieldPath']]
+        require(len(fields)==1,'Reviewed identity field not present exactly once')
+        scalar=fields[0]['scalar']
+        require(scalar.get('status')=='reported' and scalar.get('type')=='System.String','Membership identity is not a reported native string')
+        native=scalar['value']
+        matches=[n for n in ORDER if n.casefold()==native.casefold()]
+        require(len(matches)==1,'Unknown native identity; no FQDN/GUID mapping permitted')
+        names.append(matches[0])
+    require(len(names)==len(set(names)),'Duplicate actual membership identity')
+    return sorted(names)
 
 
 if __name__=='__main__':print(json.dumps(candidate(),indent=2))

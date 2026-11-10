@@ -11,6 +11,80 @@ from test_profile import fixture_contract,fixture_stage
 
 
 class MocChecks(unittest.TestCase):
+    def test_recorded_parameter_case_and_actual_getnode_scope(self):
+        contract=fixture_contract();before=copy.deepcopy(contract)
+        self.assertTrue(plan.moc_contract_preflight(contract))
+        self.assertEqual(contract,before)
+        command=contract['nodes']['LB-NODE02']['commands']['Remove-MocPhysicalNode']
+        command['parameterSets'][0]['parameters'][0]['name']='NODENAME'
+        contract['initialMembership']['commands']=copy.deepcopy(contract['nodes']['LB-NODE02']['commands'])
+        self.assertTrue(plan.moc_contract_preflight(contract))
+        getter=contract['nodes']['LB-NODE02']['commands']['Get-MocNode']
+        getter['parameterSets'][0]['parameters']=[{'name':'name','type':'System.String','mandatory':False}]
+        with self.assertRaises(ValueError):plan.moc_contract_preflight(contract)
+        source=build.qualifier()
+        self.assertIn("-location 'MocLocation' -timeoutSeconds 20",source)
+        self.assertNotIn('Get-MocPhysicalNode',source)
+        self.assertIn("$node -ceq 'LB-NODE02'",source)
+
+    def test_initial_membership_requires_explicit_observed_identity_binding(self):
+        contract=fixture_contract();identity=contract['membershipIdentity'];read=contract['initialMembership']
+        read['records'][0]['fields'][0]['scalar']['value']='lb-node01'
+        before=copy.deepcopy(read)
+        self.assertEqual(plan.membership_names(read,identity),sorted(plan.ORDER));self.assertEqual(read,before)
+        for bad in ('lb-node01.ad.localbox.test','native-guid-not-a-Windows-name'):
+            broken=copy.deepcopy(read);broken['records'][0]['fields'][0]['scalar']['value']=bad
+            with self.assertRaises(ValueError):plan.membership_names(broken,identity)
+        del contract['membershipIdentity']
+        with self.assertRaises(ValueError):plan.moc_contract_preflight(contract)
+
+    def test_off_selected_cpu_memory_start_use_running_survivor(self):
+        worker=build.render()[0]['profile-worker-template.ps1']
+        line=next(line for line in worker.splitlines() if line.startswith('    $mocObserver = if'))
+        checks=[]
+        for key,row in plan.stages().items():
+            if row['effect'] not in ('cpu','memory','guest-start'):continue
+            self.assertEqual(row['beforeStates'][row['node']],'Off')
+            checks.append("$entry=ConvertFrom-Json '"+json.dumps(row)+"'\n$before=@{states=(ConvertFrom-Json '"+json.dumps(row['beforeStates'])+"' -AsHashtable)}\n"+line+"\nif($mocObserver -ceq $entry.node -or $before.states[$mocObserver] -cne 'Running' -or $mocObserver -ceq 'LB-DC01'){throw 'Off selected guest used as MOC observer'}\n")
+        self.assertEqual(len(checks),8)
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'survivor-fixture.ps1';path.write_text("$ErrorActionPreference='Stop'\n"+''.join(checks))
+            result=subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-File',str(path)],capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_typed_lists_shape_private_capture_and_unknown_identity_fail_closed(self):
+        helper=build.CANONICAL/'scripts/smal-rolling-profile-20261109/moc-contract.ps1'
+        common=build.render()[0]['common-render-fragment.ps1']
+        guards=common[common.index('function Assert-Compute('):common.index('function Read-ComputeGuestStatic')]
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'getnode-shape-fixture.ps1'
+            source="$ErrorActionPreference='Stop'\n"+guards+"\n$t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile('"+str(helper)+"',[ref]$t,[ref]$e);if($e.Count){throw 'Parse failed'}\n"
+            source+="foreach($f in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -cin @('Digest','SafeValue','Member','OuterItems','Items','RetainTypedJson','Project-ProfileMocRecord','Resolve-ProfileMocMembers','Assert-ProfileMocMembership')},$true)){. ([ScriptBlock]::Create($f.Extent.Text))}\n"
+            source+="$privateRoot='"+d+"'\n"+r"""
+$list=[Collections.Generic.List[object]]::new()
+$list.Add([pscustomobject]@{name='lb-node01';id='actual-native-id';properties=[pscustomobject]@{location='MocLocation'};credentials='DO_NOT_EXPORT';unknownData='DO_NOT_EXPORT'})
+$items=Items @{data=@(,$list)} 'nodes'
+if($items.Count -ne 1 -or $items[0].id -cne 'actual-native-id'){throw 'Typed list lost or dictionary keys treated as nodes'}
+$record=Project-ProfileMocRecord $items[0]
+$projection=$record|ConvertTo-Json -Depth 20 -Compress
+if($projection.Contains('DO_NOT_EXPORT') -or -not $projection.Contains('actual-native-id')){throw 'Unsafe or lossy management projection'}
+$capture=RetainTypedJson 'fixture-data' @($items)
+if($capture.status -cne 'retained-private-JSON' -or -not ([IO.File]::ReadAllText($capture.path)).Contains('DO_NOT_EXPORT')){throw 'Private raw JSON was not retained intact'}
+$binding=[pscustomobject]@{semantics='WindowsComputerName';location='MocLocation';fieldPath=@('name');evidenceSha256=('d'*64)}
+$resolved=Resolve-ProfileMocMembers @($record) $binding
+if($resolved.members[0] -cne 'LB-NODE01' -or $resolved.nativeNames[0].nativeName -cne 'lb-node01'){throw 'Native name lost or unjustified identity mapping'}
+$blocked=$false;try{$null=Resolve-ProfileMocMembers @($record) $null}catch{$blocked=$true};if(-not $blocked){throw 'Unreviewed identity field admitted'}
+$bad=[pscustomobject]@{name='lb-node01.ad.localbox.test';id='native-id'};$blocked=$false
+try{$null=Resolve-ProfileMocMembers @((Project-ProfileMocRecord $bad)) $binding}catch{$blocked=$true};if(-not $blocked){throw 'Unknown FQDN mapped automatically'}
+foreach($data in @('LB-NODE01',@{nodes=@{name='LB-NODE01'}},@{nodes=@('LB-NODE01')})){
+    $blocked=$false;try{$null=Items @{data=$data} 'nodes'}catch{$blocked=$true};if(-not $blocked){throw 'String/dictionary envelope enumerated as nodes'}
+}
+$blocked=$false;try{Assert-ProfileMocMembership @{qualified=$false;membershipObserved=$false} @('LB-NODE01') $null}catch{$blocked=$true};if(-not $blocked){throw 'Unknown membership admitted CUD'}
+"""
+            path.write_text(source)
+            result=subprocess.run(['pwsh','-NoLogo','-NoProfile','-NonInteractive','-File',str(path)],capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_required_extra_parameter_and_unknown_binding_refuse(self):
         for change in ('extra','missing','alias','module','ambiguous'):
             contract=fixture_contract();command=contract['nodes']['LB-NODE02']['commands']['Remove-MocPhysicalNode']
@@ -41,7 +115,7 @@ class MocChecks(unittest.TestCase):
         self.assertNotIn('function Read-ComputeSnapshot',source)
         self.assertIsNone(plan.candidate()['executionApproval']['expiresAt'])
         self.assertFalse(plan.candidate()['executionApproval']['parentGo'])
-        p,proof,now=fixture_stage('drain-LB-NODE02');p['executionApproval']['expiresAt']='2026-11-10T15:01:00+02:00'
+        p,proof,now=fixture_stage('drain-LB-NODE02');p['executionApproval']['expiresAt']='2026-11-10T15:21:00+02:00'
         with self.assertRaises(ValueError):plan.execution_preflight(p,'drain-LB-NODE02',proof,now)
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'qualifier.ps1';path.write_text(source)
@@ -74,14 +148,14 @@ def phase_control(node,effect):
             setup+="$plan=ConvertFrom-Json '"+json.dumps(p)+"'\n$entry=ConvertFrom-Json '"+json.dumps(row)+"'\n"
             setup+="$global:Members=ConvertFrom-Json '"+json.dumps(row['beforeMocMembers'])+"'\n$global:Calls=0;$global:Events=@();$global:Wrong=$"+str(fail_readback).lower()+"\n"
             setup+="""
-$module=New-Module -Name FixtureMoc -ScriptBlock {
+$module=New-Module -Name Moc -ScriptBlock {
     function Remove-MocPhysicalNode { param([string]$NodeName) $global:Calls++;$global:Members=@($global:Members|Where-Object {$_ -cne $NodeName}) }
     function New-MocPhysicalNode { param([string]$NodeName) $global:Calls++;$global:Members=@($global:Members+$NodeName|Sort-Object) }
     Export-ModuleMember -Function Remove-MocPhysicalNode,New-MocPhysicalNode
 }
 Import-Module $module
 $global:FixtureCommands=$plan.mocContract.nodes.PSObject.Properties[$entry.node].Value.commands
-$ProfileMocRead={param($node) @{commands=@{'Get-MocPhysicalNode'=@{contractSha256=('c'*64)};'Remove-MocPhysicalNode'=@{contractSha256=('c'*64)};'New-MocPhysicalNode'=@{contractSha256=('c'*64)}};members=@($global:Members)}}
+$ProfileMocRead={param($node) @{qualified=$true;membershipObserved=$true;commands=@{'Get-MocNode'=@{contractSha256=('c'*64)};'Remove-MocPhysicalNode'=@{contractSha256=('c'*64)};'New-MocPhysicalNode'=@{contractSha256=('c'*64)}};members=@($global:Members)}}
 function Invoke-Command { param($Session,$ArgumentList,$ErrorAction,$ScriptBlock) & $ScriptBlock @ArgumentList }
 function Read-ProfileMoc { param($node) @{qualified=$true;observerNode=$node;commands=$global:FixtureCommands;members=$(if($global:Wrong){@($entry.beforeMocMembers)}else{@($global:Members)})} }
 function Save-R2Worker { param($phase) $global:Events+=@{phase=$phase;rpcReturned=$state.rpcReturned;outcome=$state.outcome} }

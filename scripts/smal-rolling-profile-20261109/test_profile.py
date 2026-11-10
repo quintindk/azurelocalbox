@@ -14,10 +14,12 @@ import plan
 def fixture_contract():
     commands={}
     for name in plan.MOC_COMMANDS:
-        commands[name]={'name':name,'commandType':'Function','moduleName':'FixtureMoc','moduleVersion':'1.0','modulePath':'fixture-only',
-            'moduleSha256':'a'*64,'definitionSha256':'b'*64,'contractSha256':'c'*64,
-            'parameterSets':[{'name':'fixture','parameters':[] if name=='Get-MocPhysicalNode' else [{'name':'NodeName','type':'System.String','mandatory':True}]}]}
-    return {'nodes':{node:{'qualified':True,'observerNode':node,'commands':copy.deepcopy(commands),'membershipObserved':True,'members':sorted(plan.ORDER)} for node in plan.ORDER}}
+        commands[name]={'name':name,'commandType':'Function','moduleName':'Moc','moduleVersion':'1.2.161','modulePath':'fixture-only',
+            'moduleSha256':'b9dbda4ab8c0ce6c77d8fa219a153983114afc859f5bb10689f6f3cf71025b7f','definitionSha256':'b'*64,'contractSha256':'c'*64,
+            'parameterSets':[{'name':'fixture','parameters':[{'name':'location','type':'System.String','mandatory':True},{'name':'timeoutSeconds','type':'System.Int32','mandatory':False}] if name=='Get-MocNode' else [{'name':'nodeName','type':'System.String','mandatory':False}]}]}
+    nodes={node:{'qualified':True,'bindingsQualified':True,'observerNode':node,'commands':copy.deepcopy(commands),'membershipObserved':True,'members':sorted(plan.ORDER)} for node in plan.ORDER}
+    initial={'observerNode':'LB-NODE02','bindingsQualified':True,'commands':copy.deepcopy(commands),'membershipDataRead':True,'projectionComplete':True,'location':'MocLocation','records':[{'fields':[{'path':['nodeName'],'scalar':{'status':'reported','type':'System.String','value':n}}]} for n in sorted(plan.ORDER)]}
+    return {'nodes':nodes,'initialMembership':initial,'membershipIdentity':{'semantics':'WindowsComputerName','location':'MocLocation','fieldPath':['nodeName'],'evidenceSha256':'d'*64}}
 
 
 def fixture_stage(stage):

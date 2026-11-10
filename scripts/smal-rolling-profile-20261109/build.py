@@ -26,8 +26,8 @@ BASE_RENDER_PINS={
     'profile-stage-template.ps1':'e603ff23bc453b727e0af9a5f44a161c2e734daee419d43ed1b47706b35eae1d',
     'proposed-canonical-startup.ps1':'657955dffbc22456863fe6360cc567adacc92e26d857904b20c26fbc5057face',
 }
-RENDER_PINS={**BASE_RENDER_PINS,'profile-worker-template.ps1':'34de22cab5991121641f6f6a919f3b9ae35305c866944a9b46ca97ad631138a3','profile-stage-template.ps1':'ef7c95089d2698575105bf7ec8abf6b8f29591d0036249d6f00755cfcdc05858'}
-MOC_HELPER_SHA256='040b3c1e55ef5934eb76215d8c00b22730cc23136c5f61d6e50856eef81455c9'
+RENDER_PINS={**BASE_RENDER_PINS,'profile-worker-template.ps1':'715fd5597bcc003eb6ddc955d87ca2bc340312fabd629e9123f699b5892947ea','profile-stage-template.ps1':'f712192f329f9ad4739213d9798d0e16c761240c7c7060f4b536b3ea65c709e2'}
+MOC_HELPER_SHA256='022d3f0314b5d24d36c86081c5c4b0aaa7d966dd9a22c2ba84b56c7db91d44df'
 OLD_ROOT=r'C:\ProgramData\AzureLocalBox\ComputeCapacity-R2-20261108-01'
 NEW_ROOT=r'C:\ProgramData\AzureLocalBox\FoundationProfile-20261109-01'
 
@@ -158,7 +158,7 @@ function Assert-ProfileInfrastructurePlacement($snapshot) {
     pins[str(helper_path.relative_to(CANONICAL))]=MOC_HELPER_SHA256
     worker=worker.replace('transitionContract.version -ne 3','transitionContract.version -ne 4')
     worker=worker.replace("'drain','guest-stop'","'drain','moc-remove','moc-add','guest-stop'",1)
-    worker=worker.replace("    $target=@", "    if ($plan.maximumExecutionDeadline -cne '2026-11-10T15:00:00+02:00' -or [DateTimeOffset]::Parse($plan.executionApproval.expiresAt) -gt [DateTimeOffset]::Parse($plan.maximumExecutionDeadline)) { throw 'GO exceeds fixed proposed phase bound' }\n    $target=@",1)
+    worker=worker.replace("    $target=@", "    if ($plan.maximumExecutionDeadline -cne '2026-11-10T15:20:00+02:00' -or [DateTimeOffset]::Parse($plan.executionApproval.expiresAt) -gt [DateTimeOffset]::Parse($plan.maximumExecutionDeadline)) { throw 'GO exceeds fixed proposed phase bound' }\n    $target=@",1)
     worker=worker.replace("$entry.healthProfile -ceq 'selected-maintenance'","$entry.healthProfile -cin @('selected-maintenance','selected-return')",1)
     worker=worker.replace("$entry.effect -cin @('resume','guest-start')","$entry.effect -cin @('resume','guest-start','moc-add')",1)
     worker=worker.replace("@('drain', 'resume','infrastructure-return')","@('drain', 'resume','infrastructure-return','moc-remove','moc-add')",1)
@@ -178,12 +178,13 @@ function Assert-ProfileInfrastructurePlacement($snapshot) {
     worker=worker.replace("                $state.drainProof = $proof","                $state.drainProof = $proof\n                $state.postReadSucceeded = $true",1)
     moc_effect="""            { $_ -cin @('moc-remove','moc-add') } {
                 $expectedBinding = $plan.mocContract.nodes.PSObject.Properties[$entry.node].Value
-                $rpc = Invoke-Command -Session $session -ArgumentList $entry.node, $entry.effect, $expectedBinding, @($entry.beforeMocMembers), $ProfileMocRead.ToString() -ErrorAction Stop -ScriptBlock {
-                    param($node, $effect, $binding, $beforeMembers, $readSource)
+                $rpc = Invoke-Command -Session $session -ArgumentList $entry.node, $entry.effect, $expectedBinding, @($entry.beforeMocMembers), $ProfileMocRead.ToString(), $plan.mocContract.membershipIdentity -ErrorAction Stop -ScriptBlock {
+                    param($node, $effect, $binding, $beforeMembers, $readSource, $identityBinding)
                     $ErrorActionPreference = 'Stop'
-                    $read = & ([ScriptBlock]::Create($readSource)) $node
+                    $read = & ([ScriptBlock]::Create($readSource)) $node $false $identityBinding
+                    if ($read.qualified -ne $true -or $read.membershipObserved -ne $true) { throw 'Actual MOC membership identity is not qualified' }
                     if ((@($read.members | Sort-Object) -join '|') -cne (@($beforeMembers | Sort-Object) -join '|')) { throw 'Actual MOC membership changed before mutation' }
-                    foreach ($name in @('Get-MocPhysicalNode','Remove-MocPhysicalNode','New-MocPhysicalNode')) {
+                    foreach ($name in @('Get-MocNode','Remove-MocPhysicalNode','New-MocPhysicalNode')) {
                         if ($read.commands[$name].contractSha256 -cne $binding.commands.PSObject.Properties[$name].Value.contractSha256) { throw 'Installed MOC binding changed before mutation' }
                     }
                     $name = if ($effect -ceq 'moc-remove') { 'Remove-MocPhysicalNode' } elseif ($effect -ceq 'moc-add') { 'New-MocPhysicalNode' } else { throw 'Unknown exact MOC effect' }
@@ -196,6 +197,7 @@ function Assert-ProfileInfrastructurePlacement($snapshot) {
                 $state.rpcReturned = $true; $state.outcome = 'rpc-returned-await-independent-observation'; Save-R2Worker 'rpc-returned'
                 $state.postReadSucceeded = $false
                 $mocAfter = Read-ProfileMoc $entry.node
+                $state.mocObservation = $mocAfter
                 Assert-ProfileMocMembership $mocAfter $entry.afterMocMembers $plan.mocContract
                 $state.mocMembership = @($mocAfter.members); $state.postReadSucceeded = $true
             }
@@ -236,7 +238,7 @@ def qualifier():
 $nodes=[ordered]@{}
 foreach($node in @('LB-NODE02','LB-NODE03','LB-NODE01')) {
     if([DateTimeOffset]::UtcNow -ge $deadline){throw 'Fixed MOC qualifier window closed'}
-    $nodes[$node]=Read-ProfileMoc $node $true
+    $nodes[$node]=Read-ProfileMoc $node $true ($node -ceq 'LB-NODE02')
 }
 if([DateTimeOffset]::UtcNow -ge $deadline){throw 'Fixed MOC qualifier window closed after reads'}
 @{status='complete';mutationPerformed=$false;atUtc=[datetime]::UtcNow.ToString('o');commonSourceSha256='0e58f64f888c897a48b1d4f28bd6faec22346e9d8f1c36e4c92da29f0a2b6b86';nodes=$nodes}|ConvertTo-Json -Depth 30 -Compress
