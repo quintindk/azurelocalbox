@@ -111,6 +111,50 @@ function Read-Remaining02Handoff([string]$sha){
  return $h
 }
 
+# Renewed human startup, 2026-11-11 only. This does not close/renew operation03.
+function Assert-RenewedPartialStartup20261111 {
+    $now=[DateTimeOffset]::UtcNow
+    if($now -lt [DateTimeOffset]::Parse('2026-11-11T00:00:00+02:00') -or $now -ge [DateTimeOffset]::Parse('2026-11-11T15:20:00+02:00')){throw 'Renewed partial-startup source window closed'}
+    $root='C:\ProgramData\AzureLocalBox\FoundationProfile-20261110-03'
+    $dir=Get-Item -LiteralPath $root
+    if(-not $dir.PSIsContainer -or ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Original03 root missing/redirected'}
+    $operation=Get-Content (Join-Path $root 'operation.json') -Raw|ConvertFrom-Json
+    if($operation.operationId -cne 'smal-foundation-profile-20261110-03' -or $operation.planSha256 -cne '7ad5e7418dc707dc69d3f48f5330d0aa0ca15125bce7d8fa46a41b99070d338c' -or $operation.sourceCommit -cne '9fb0f334744cece48974107fdf664591c0451df0' -or $operation.predecessorHandoffSha256 -cne '9a687b15da29bbd74b09e0d75cf97f0dd8ec533cdf512c00638e799b7867edf7'){throw 'Exact retained03 operation/source/handoff differs'}
+    $null=Read-Remaining02Handoff $operation.predecessorHandoffSha256
+    foreach($path in @('C:\ProgramData\AzureLocalBox\ServiceReturn-20261110-04','C:\ProgramData\AzureLocalBox\ServiceReturn-20261111-01')){if(Test-Path -LiteralPath $path){throw 'Another retained service-return phase requires exact reconciliation before startup'}}
+    $expected=ConvertFrom-Json '{"moc-remove-LB-NODE02":{"pid":3240,"workerSha256":"e0fc80aebd13c6d2034bf6754014bf5cec870bda0489331bd628cf641c767562","stateSha256":"c18e93f914606ea39ae059cac7749d1c4c7cb56cc71b09436a9961412d9d91ad","executeReceiptSha256":"0f1b02978b623fc9b4f6dda364070e7e2cf70060a90081ee25d035b3ca87d797"},"guest-stop-LB-NODE02":{"pid":5960,"workerSha256":"d4abf58523cdcc3037f1126b8bbcb8b4087b13f1d62221dfa7a701cefadf8478","stateSha256":"0cde7a4c99966a8b2e560a46ffd195ce700fdeb6d03f22f649f2c6d5f6a8237c","executeReceiptSha256":"95f4901252be75b2308b7b533e539d6e50997b527382c8ef3cec185c81aa59f3"},"cpu-LB-NODE02":{"pid":5372,"workerSha256":"9ff0e0fea0ea32455301597aa16dd411e8b4f0e33c84ef7638de1cd2d09a4d9d","stateSha256":"9d77a984b8893388bebd526fe9bb297203d4f1d5e6578ff519573224227e41e6","executeReceiptSha256":"f0b8c2a9dff894117822f4d9de9ee4ff26ceb58430ec6f0fc8f2a1cb0267a882"},"memory-LB-NODE02":{"pid":10684,"workerSha256":"8d0b99abc8d8477ba488d54c4c8319af4c923058c7ecc6dbf431762c3cf02287","stateSha256":"9f7b9214c92b4a498e6ff94aae2aa7c3198e55c43d29595efdcc9929eb579bed","executeReceiptSha256":"8583024ab906ce78ecbd6e38401e2b73070823c2075e3f4953cfad02641dd92e"},"guest-start-LB-NODE02":{"pid":6552,"workerSha256":"14700c9137c3612dcd789ebc87c2133d26cc8a6cc9507ad474d262531f80e422","stateSha256":"cbe2b51059a5a38b86fbe41912c1d017e31400d483764909b4882f1c7654cfa4","executeReceiptSha256":"936a36214abb6145c71acfdbf208b276c4578c3e508b12929748faad8c952532"},"resume-LB-NODE02":{"pid":3892,"workerSha256":"e7e25260064885fef28f5743d9832fcca53f0937bc45c81df11769f256e033df","stateSha256":"2dc3d9676c34527fb1df0a600545c18b3f759fbd68c2db82c50067389f9fcf52","executeReceiptSha256":"22142207cc83f211e73b10548d420d4156132edf6fd3a1256354dc39ef2314a0"}}'
+    $states=@(Get-ChildItem -LiteralPath $root -Filter 'worker-*.state.json' -File)
+    $requests=@(Get-ChildItem -LiteralPath $root -Filter 'request-*.json' -File)
+    if($states.Count -ne 6 -or $requests.Count -ne 6){throw 'Original03 issued-stage inventory differs; no blanket maintenance bypass'}
+    foreach($key in $expected.PSObject.Properties.Name){
+        $e=$expected.PSObject.Properties[$key].Value
+        $statePath=Join-Path $root ('worker-'+$key+'.state.json');$requestPath=Join-Path $root ('request-'+$key+'.json');$workerPath=Join-Path $root ('worker-'+$key+'.journal-fixed-01.ps1')
+        if((Get-FileHash -LiteralPath $statePath).Hash.ToLowerInvariant() -cne $e.stateSha256 -or (Get-FileHash -LiteralPath $workerPath).Hash.ToLowerInvariant() -cne $e.workerSha256){throw 'Actual original03 state/source hash changed'}
+        $state=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json;$request=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json
+        foreach($record in @($state,$request)){
+            if($record.operationId -cne $operation.operationId -or $record.planSha256 -cne $operation.planSha256 -or $record.sourceCommit -cne $operation.sourceCommit -or $record.stage -cne $key -or $record.key -cne $key -or -not $record.pid -or -not $record.processStartedUtc){throw 'Original03 process/record identity differs'}
+            $p=Get-Process -Id $record.pid -ErrorAction SilentlyContinue
+            if($p -and $p.StartTime.ToUniversalTime().ToString('o') -ceq $record.processStartedUtc){throw 'Original03 controller/worker still active'}
+        }
+        if($state.pid -ne $e.pid -or $state.phase -cne 'returned' -or $state.rpcReturned -ne $true -or $state.outcome -cnotin @('rpc-returned-await-independent-observation','rpc-returned-postread-failed-await-independent-observation') -or $state.sourceSha256.ToLowerInvariant() -cne $e.workerSha256){throw 'Original03 issued effect is not the exact known return'}
+    }
+    if(@(Get-ChildItem -LiteralPath $root -File|Where-Object {$_.Name.Contains('moc-add-LB-NODE02')}).Count){throw 'Original03 MOC-add intent exists; do not adopt/replay'}
+    foreach($f in @(Get-ChildItem -LiteralPath $root -Filter 'startup-*.state.json' -File)){
+        $s=Get-Content $f.FullName -Raw|ConvertFrom-Json;$p=Get-Process -Id $s.pid -ErrorAction SilentlyContinue
+        if(-not $s.pid -or -not $s.processStartedUtc -or $s.phase -cne 'returned' -or ($p -and $p.StartTime.ToUniversalTime().ToString('o') -ceq $s.processStartedUtc)){throw 'Original startup process unresolved'}
+    }
+    $profiles=@{'LB-DC01'=@{cpu=2;memory=4GB};'LB-NODE01'=@{cpu=8;memory=64GB};'LB-NODE02'=@{cpu=20;memory=96GB};'LB-NODE03'=@{cpu=8;memory=64GB}}
+    $vms=@(Get-VM);if($vms.Count -ne 4){throw 'Exact four existing VMs required'}
+    foreach($vm in $vms){$wanted=$profiles[$vm.Name];if($null -eq $wanted -or $vm.ProcessorCount -ne $wanted.cpu -or $vm.MemoryStartup -ne $wanted.memory){throw 'Retained partial guest profile drifted'}}
+    # Existing canonical exact VM-ID/state/Start-VM/heartbeat path follows unchanged.
+    # Neither completion nor current storage/guardian/MOC readiness is asserted here.
+}
+
+    $partialMaintenanceResumed=$false
+    if(Test-Path -LiteralPath 'C:\ProgramData\AzureLocalBox\FoundationProfile-20261110-03'){
+        Assert-RenewedPartialStartup20261111
+        $partialMaintenanceResumed=$true
+    }else{
     if((Test-Path 'C:\ProgramData\AzureLocalBox\FoundationProfile-20261110-02') -and (Test-Path 'C:\ProgramData\AzureLocalBox\FoundationProfile-20261110-02\handoff-to-FoundationProfile-20261110-03.json')){
         if(-not(Test-Path $remainingRoot)){throw '02 handed off but03 incomplete; no normal startup'}
         Assert-RemainingStartup
@@ -128,6 +172,7 @@ function Read-Remaining02Handoff([string]$sha){
     }
     }
     if(Test-Path $remainingRoot){Assert-RemainingStartup}
+    }
     $targets = @(
         @{ name = 'LB-DC01'; id = 'f94c71f1-6854-48b9-a9f1-8238c99366d0' },
         @{ name = 'LB-NODE01'; id = '3adff629-2f67-449b-ab32-8a8748c46f34' },
@@ -164,7 +209,7 @@ function Read-Remaining02Handoff([string]$sha){
         Start-Sleep -Seconds 5
     } while ($true)
     if ($capacityGate) { Set-CapacityStartupPhase $capacityGate 'returned' }
-    @{ atUtc = [datetime]::UtcNow.ToString('o'); guests = $results; capacityInterlock = $(if ($capacityGate) { @{ key = $capacityGate.key; planSha256 = $capacityGate.planSha256; phase = $capacityGate.phase } } else { $null }); registrationInvoked = $false; registrationMarkersChanged = $false; guestOsReadinessVerified = $false; guestHeartbeatVerified = $true } | ConvertTo-Json -Depth 4 -Compress
+    @{ atUtc = [datetime]::UtcNow.ToString('o'); guests = $results; capacityInterlock = $(if ($capacityGate) { @{ key = $capacityGate.key; planSha256 = $capacityGate.planSha256; phase = $capacityGate.phase } } else { $null }); registrationInvoked = $false; registrationMarkersChanged = $false; guestOsReadinessVerified = $false; guestHeartbeatVerified = $true; resumedPartialMaintenance = $partialMaintenanceResumed; original03HistoryUnchanged = $true; startupBoundaryCloseSha256 = 'd2cf34d16f655010eb988b4d91bc30470fc5ee6f24e7a3b0309b220852687e0d' } | ConvertTo-Json -Depth 4 -Compress
 } finally {
     if ($capacityMutexHeld) { $capacityMutex.ReleaseMutex() }
     $capacityMutex.Dispose()
