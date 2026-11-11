@@ -23,7 +23,7 @@ def effect(p):
  require(set(p['acceptedCurrentProtectorHashes'])==set(ret.old.plan.IDS) and all(re.fullmatch('[A-Fa-f0-9]{64}',x) for x in p['acceptedCurrentProtectorHashes'].values()),'Explicit current four-VM fingerprint projection required')
  require(p['controllerClosure']['actualExitReceiptSha256']==BOUNDARY and p['controllerClosure']['originalControllerAbsent'] is True and p['controllerClosure']['executionReturned'] is True,'Exact known original controller closure required')
  require(ret.old.stamp(p['entitlement']['earliestOwnerExpiry'])>=ret.old.stamp(p['executionApproval']['expiresAt']),'Actual fresh Owner shorter than new GO')
- read=reader.build();read=read[:read.index('\n$o=Read-ServiceReturn04')]
+ read=reader.functions()
  read+=r"""
 function Assert-MorningAcceptedProtection($observation){
  foreach($g in $observation.hostSnapshot.guestsStatic){$expected=$phase04.acceptedCurrentProtectorHashes.PSObject.Properties[$g.name].Value;Assert-Compute ($expected -and $g.protectorHash -ceq $expected) 'New day: actual current fingerprint differs from NEW explicit acceptance'}
@@ -49,6 +49,7 @@ function Assert-MorningAcceptedProtection($observation){
 def seal(read_path,accepted_read_sha,decision_path,api_path,api_sha,source_commit,reviewed,expires):
  require(reviewed==contract_sha(),'Exact reviewed dated source contract differs');raw=read_path.read_bytes();require(sha(raw)==accepted_read_sha,'Actual parent-accepted native read changed');r=json.loads(raw)
  require(r.get('status')=='complete' and r.get('sshExitCode')==0 and r.get('strictPinnedHostKey') is True and r.get('loopbackOnly') is True and r.get('passwordAuthentication') is False and r.get('renderedSourceSha256')==sha(reader.build().encode()),'Exact passing dated native read required')
+ require(r.get('result',{}).get('status')=='complete-new-day-service-return-read-not-go','A completed transport with a refused guard is NOT passing evidence')
  o=r['result']['evidence'];require(o['node02State']=='Up' and o['original24VpdOwnerAndMaintenanceGuardAccepted'] is True,'Actual service-return native health missing')
  if o['canonicalMocMembers']==['LB-NODE01','LB-NODE02','LB-NODE03']:return None
  require(o['canonicalMocMembers']==['LB-NODE01','LB-NODE03'],'Exact MOC exclusion required');ret.old.fresh(o['atUtc'],datetime.now(timezone.utc))

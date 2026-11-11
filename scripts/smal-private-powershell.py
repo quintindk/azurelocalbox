@@ -526,6 +526,7 @@ def main(script, name, envelope_key=None, three_node_context=None, capacity_cont
                      'scripts/read-smal-rolling-profile-baseline-20261110-02.ps1': 300,
                       'scripts/read-smal-rolling03-handoff-20261110-01.ps1': 300,
                       'scripts/read-smal-node02-service-return-baseline-20261111-01.ps1': 300,
+                      'scripts/read-smal-node02-service-return-baseline-20261111-02.ps1': 300,
                      'scripts/read-smal-node02-service-return-guard-20261111-01.ps1': 300,
                       'scripts/restore-smal-node02-moc-20261111-01.ps1': 600,
                      'scripts/read-smal-rolling-resize-20261111-02.ps1': 300,
