@@ -19,7 +19,9 @@ def effect(p):
  require(p['executionApproval']['parentGo'] is True and p['nativeEffectsApproved'] is True and ret.old.stamp(p['executionApproval']['expiresAt'])<=ret.old.stamp(BOUND),'Current new dated GO required')
  require(re.fullmatch('[a-f0-9]{40}',p['sourceCommit'] or '') and re.fullmatch('[a-f0-9]{64}',p['currentProtectionDecisionSha256'] or '') and p['parentSelectionSha256']==p['currentProtectionDecisionSha256'] and p['currentProtectionDecisionSha256'] not in ('34342a7b787b40674257d3541e343aa9ded3dc8dfa19a6f029d7b60a8dea748f','760c52bc70211d0819671bd5c8ed05a1e20fc1119652a45ec204294c444573f5'),'NEW dated engineering/protection decision required; old decisions are reference only')
  now=datetime.now(timezone.utc);require(now<ret.old.stamp(p['executionApproval']['expiresAt']),'New dated window expired')
- for at in (p['acceptedReadObservedAtUtc'],p['entitlement']['observedAtUtc']):ret.old.fresh(at,now)
+ # Accepted baseline/protection and historical closure are immutable references.
+ # The native effect re-observes all current facts/processes before its sole RPC.
+ ret.old.fresh(p['entitlement']['observedAtUtc'],now)
  require(set(p['acceptedCurrentProtectorHashes'])==set(ret.old.plan.IDS) and all(re.fullmatch('[A-Fa-f0-9]{64}',x) for x in p['acceptedCurrentProtectorHashes'].values()),'Explicit current four-VM fingerprint projection required')
  require(p['controllerClosure']['actualExitReceiptSha256']==BOUNDARY and p['controllerClosure']['originalControllerAbsent'] is True and p['controllerClosure']['executionReturned'] is True,'Exact known original controller closure required')
  require(ret.old.stamp(p['entitlement']['earliestOwnerExpiry'])>=ret.old.stamp(p['executionApproval']['expiresAt']),'Actual fresh Owner shorter than new GO')
@@ -32,6 +34,9 @@ function Assert-MorningAcceptedProtection($observation){
  template=Path('/tmp/opencode/smal-service-return-20261110-04/moc04-effect.ps1.in').read_text()
  require(sha(template.encode())=='f4c299718a25f59746e0bd403e1a9d31dc81fbddd88929148ef99984be44dc92','Reviewed one-effect writer changed')
  template=template.replace('smal-node02-service-return-20261110-04',OP).replace(r'C:\ProgramData\AzureLocalBox\ServiceReturn-20261110-04',ROOT).replace('2026-11-10T23:40:00+02:00',BOUND)
+ old_age="foreach($at in @($phase04.acceptedReadObservedAtUtc,$phase04.controllerClosure.observedAtUtc,$phase04.entitlement.observedAtUtc))"
+ require(template.count(old_age)==1,'Reviewed freshness boundary differs')
+ template=template.replace(old_age,'foreach($at in @($phase04.entitlement.observedAtUtc))')
  template=template.replace("$phase04.parentSelectionSha256 -ceq '34342a7b787b40674257d3541e343aa9ded3dc8dfa19a6f029d7b60a8dea748f'","$phase04.parentSelectionSha256 -ceq '"+p['currentProtectionDecisionSha256']+"'")
  template=template.replace('$before=Read-ServiceReturn04;Assert-MocOnlyOriginal03 $before','$before=Read-ServiceReturn04;Assert-MocOnlyOriginal03 $before;Assert-MorningAcceptedProtection $before')
  template=template.replace('$post=Read-ServiceReturn04;Assert-MocOnlyOriginal03 $post','$post=Read-ServiceReturn04;Assert-MocOnlyOriginal03 $post;Assert-MorningAcceptedProtection $post')
@@ -52,7 +57,7 @@ def seal(read_path,accepted_read_sha,decision_path,api_path,api_sha,source_commi
  require(r.get('result',{}).get('status')=='complete-new-day-service-return-read-not-go','A completed transport with a refused guard is NOT passing evidence')
  o=r['result']['evidence'];require(o['node02State']=='Up' and o['original24VpdOwnerAndMaintenanceGuardAccepted'] is True,'Actual service-return native health missing')
  if o['canonicalMocMembers']==['LB-NODE01','LB-NODE02','LB-NODE03']:return None
- require(o['canonicalMocMembers']==['LB-NODE01','LB-NODE03'],'Exact MOC exclusion required');ret.old.fresh(o['atUtc'],datetime.now(timezone.utc))
+ require(o['canonicalMocMembers']==['LB-NODE01','LB-NODE03'],'Exact MOC exclusion required')
  d_raw=decision_path.read_bytes();d=json.loads(d_raw)
  require(d['operationId']==OP and d['hardStopSast']==BOUND and d['acceptedCurrentProtectionByCoordinator'] is True and d['acceptedNativeReadReceiptSha256']==accepted_read_sha and d['original03BoundaryCloseSha256']==BOUNDARY,'Actual NEW dated engineering/current-protection acceptance missing')
  fingerprints={g['name']:g['protectorHash'] for g in o['hostSnapshot']['guestsStatic']};require(d['acceptedCurrentProtectorHashes']==fingerprints,'Do not relabel old fingerprints as current')
