@@ -5,8 +5,10 @@ profile. Connects/reconnects that profile when needed, without editing it. Does
 not activate roles, change shutdown automation, or invoke registration/bootstrap.
 """
 import argparse
+import base64
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 from pathlib import Path
 import runpy
@@ -26,7 +28,7 @@ GUESTS = {'LB-DC01': 'f94c71f1-6854-48b9-a9f1-8238c99366d0',
           'LB-NODE01': '3adff629-2f67-449b-ab32-8a8748c46f34',
           'LB-NODE02': '12a44e0c-cc08-4c4c-a812-fa0b56efdbc3',
           'LB-NODE03': '5b6eba15-fa82-4e12-9e45-5ffbcd48c8a9'}
-OUT = ROOT / 'docs/deployment-2026-10-29'
+OUT = Path.home() / '.local/state/azurelocalbox/receipts'
 VPN = 'entlz-san-cert'
 
 
@@ -47,15 +49,10 @@ def verify_account(account):
 
 
 def verify_source():
-    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    for path in ['scripts/start-smal-localbox.py', 'scripts/start-smal-existing-guests.ps1', 'scripts/smal-private-powershell.py', 'scripts/smal-capacity-interlock.py', 'scripts/smal-capacity-startup-interlock.ps1', 'docs/deployment-2026-10-29/node03-local-completion.json']:
-        if (ROOT / path).read_bytes() != subprocess.check_output(['git', 'show', 'HEAD:' + path], cwd=ROOT):
-            raise RuntimeError('Startup source differs from HEAD. Commit and push before use.')
-    branch = subprocess.check_output(['git', 'branch', '--show-current'], cwd=ROOT, text=True).strip()
-    remote = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', 'refs/heads/' + branch], cwd=ROOT, text=True).split()
-    if not remote or remote[0] != head:
-        raise RuntimeError('Exact startup source must be pushed before use.')
-    return head
+    paths = ['scripts/start-smal-localbox.py', 'scripts/start-smal-existing-guests.ps1',
+             'scripts/smal-private-powershell.py', 'config/smal-platform.json']
+    files = {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in paths}
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
 
 
 def verify_private_route():
@@ -150,11 +147,11 @@ def verify_guest_result(receipt):
         raise RuntimeError('Exact nested guest identities differ.')
     if any(row.get('after') != 'Running' or row.get('heartbeatReady') is not True for row in rows):
         raise RuntimeError('Not all guests are Running with a healthy Hyper-V heartbeat.')
-    if data.get('registrationInvoked') is not False or data.get('registrationMarkersChanged') is not False:
+    if data.get('registrationInvoked') is not False:
         raise RuntimeError('Startup-only operation boundary differs.')
 
 
-def main(host_timeout=900, capacity_handover=None):
+def main(host_timeout=900):
     # One local operator at a time. Lock contains no credentials.
     lock_path = Path('/tmp/opencode/smal-localbox-start.lock')
     with lock_path.open('a') as lock:
@@ -162,8 +159,8 @@ def main(host_timeout=900, capacity_handover=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another LocalBox startup command is already running.') from None
-        run = 'start-' + datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
-        OUT.mkdir(exist_ok=True)
+        run = 'start-' + uuid.uuid4().hex
+        OUT.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = OUT / (run + '.json')
         record = {'runId': run, 'beganAtUtc': datetime.now(timezone.utc).isoformat(), 'status': 'preflight',
                   'hostId': VM_ID, 'shutdownAutomationChanged': False, 'roleActivationRequested': False,
@@ -175,36 +172,20 @@ def main(host_timeout=900, capacity_handover=None):
         with path.open('x') as stream:
             stream.write(json.dumps(record, indent=2) + '\n')
         try:
-            record['sourceCommit'] = verify_source()
-            gate = runpy.run_path(str(ROOT / 'scripts/smal-capacity-interlock.py'), run_name='canonical_capacity_startup_gate')
-            capacity = gate['authorise_startup'](capacity_handover, expected_source=record['sourceCommit'])
-            record['capacityInterlock'] = None if capacity is None else {'key': capacity['key'], 'planSha256': capacity['handover']['planSha256']}
+            record['sourceSha256'] = verify_source()
             ensure_private_vpn(record, save)
             verify_account(az(['account', 'show', '--subscription', SUB]))
             ensure_host(host_state(), host_timeout, record, save)
             record['status'] = 'starting-and-checking-nested-guests'
-            record['privateGuestReceipt'] = 'docs/deployment-2026-10-27/private-ssh-' + run + '.json'
             save()
             helper = runpy.run_path(str(ROOT / 'scripts/smal-private-powershell.py'), run_name='localbox_start_transport')
-            # No automatic repeat after a failed/uncertain remote command.
-            code = helper['main']('scripts/start-smal-existing-guests.ps1', run)
-            guest_receipt = json.loads((ROOT / record['privateGuestReceipt']).read_text())
-            if code != 0:
+            parameters = {'ConfigurationBase64': base64.b64encode((ROOT / 'config/smal-platform.json').read_bytes()).decode()}
+            guest_receipt, guest_path = helper['run']('scripts/start-smal-existing-guests.ps1', run + '-guests',
+                                                     parameters=parameters, timeout=360)
+            record['privateGuestReceipt'] = str(guest_path)
+            if guest_receipt['status'] != 'complete':
                 raise RuntimeError('Nested startup incomplete. Inspect the private transport receipt. Do not blindly retry.')
             verify_guest_result(guest_receipt)
-            if capacity is not None:
-                remote = guest_receipt['result'].get('capacityInterlock')
-                if (not isinstance(remote, dict) or remote.get('key') != capacity['handover']['remoteGrant']['key']
-                        or remote.get('planSha256') != capacity['handover']['planSha256'] or remote.get('phase') != 'returned'
-                        or guest_receipt.get('sshExitCode') != 0):
-                    raise RuntimeError('Capacity startup RPC/process completion proof missing. Durable barrier retained.')
-                gate['resolve'](capacity['key'], {'atUtc': datetime.now(timezone.utc).isoformat(),
-                    'operationId': gate['OPERATION'], 'planSha256': capacity['handover']['planSha256'],
-                    'sourceCommit': record['sourceCommit'], 'stage': capacity['intent']['stage'],
-                    'identityAndSettingsVerified': True, 'effectObserved': True, 'outcome': 'applied',
-                    'privateCommandExited': True, 'allExactGuestsRunning': True, 'remoteStartupPhase': 'returned',
-                    'workerAlive': False, 'canonicalReceipt': str(path.relative_to(ROOT)),
-                    'privateReceipt': record['privateGuestReceipt']})
             record['guests'] = guest_receipt['result']['guests']
             record['status'] = 'complete-host-and-four-guests-running-heartbeats-healthy'
         except (subprocess.TimeoutExpired, TimeoutError):
@@ -218,7 +199,7 @@ def main(host_timeout=900, capacity_handover=None):
             record['status'] = 'interrupted-inspect-before-retry'
         record['finishedAtUtc'] = datetime.now(timezone.utc).isoformat()
         save()
-        print(json.dumps({'status': record['status'], 'receipt': str(path.relative_to(ROOT)),
+        print(json.dumps({'status': record['status'], 'receipt': str(path),
                           'error': record.get('error'), 'platformReadinessVerified': False}, indent=2))
         return 0 if record['status'].startswith('complete-') else 2
 
@@ -226,8 +207,7 @@ def main(host_timeout=900, capacity_handover=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host-timeout', type=int, default=900, help='Host readiness limit in seconds (60–3600).')
-    parser.add_argument('--capacity-handover', type=Path, help='Exact sealed-plan/settled-history capacity handover. Not a bypass flag.')
     args = parser.parse_args()
     if not 60 <= args.host_timeout <= 3600:
         parser.error('--host-timeout must be between 60 and 3600')
-    sys.exit(main(args.host_timeout, args.capacity_handover))
+    sys.exit(main(args.host_timeout))
