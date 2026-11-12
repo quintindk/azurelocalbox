@@ -53,15 +53,19 @@ check() {
 
   validate=$(az deployment group show -g "$AZLOCAL_RG" --name localcluster-validate \
     --query "properties.provisioningState" -o tsv 2>/dev/null || echo "-")
+  deploy=$(az deployment group show -g "$AZLOCAL_RG" --name localcluster-deploy \
+    --query "properties.provisioningState" -o tsv 2>/dev/null || echo "-")
 
-  echo "[$(ts)] stage='${stage}' log_age=${logage}m task=${task} nested_vms=${vms} validate=${validate}"
+  echo "[$(ts)] stage='${stage}' log_age=${logage}m task=${task} nested_vms=${vms} validate=${validate} deploy=${deploy}"
 
   # --- terminal states -------------------------------------------------------
-  if [ "$stage" = "Failed" ] || [ "$validate" = "Failed" ]; then
+  if [ "$stage" = "Failed" ] || [ "$validate" = "Failed" ] || [ "$deploy" = "Failed" ]; then
     echo "[$(ts)] FAILED. Pulling the specific error:"
-    az deployment operation group list -g "$AZLOCAL_RG" --name localcluster-validate \
+    for d in localcluster-validate localcluster-deploy; do
+    az deployment operation group list -g "$AZLOCAL_RG" --name "$d" \
       --query "[?properties.provisioningState=='Failed'].{type:properties.targetResource.resourceType,code:properties.statusMessage.error.code,msg:properties.statusMessage.error.message}" \
       -o json 2>/dev/null | head -20
+    done
     echo "[$(ts)] In-VM log tail:"
     az vm run-command invoke -g "$NODES_RG" -n "$VM_NAME" --command-id RunPowerShellScript \
       --scripts 'Get-Content C:\LocalBox\Logs\New-LocalBoxCluster.log -Tail 25 | Out-String' \
@@ -75,10 +79,10 @@ check() {
   # then the authoritative liveness signal, so a quiet log is expected, not
   # evidence of death. Only treat a stale log as fatal when nothing is running
   # server-side either.
-  if [ "$validate" = "Running" ]; then
+  if [ "$validate" = "Running" ] || [ "$deploy" = "Running" ]; then
     if [ "$logage" != "?" ] && [ "$logage" != "-1" ] \
        && awk -v a="$logage" -v s="$STALE_MINUTES" 'BEGIN{exit !(a>s)}'; then
-      echo "[$(ts)] note: log quiet ${logage}m, but localcluster-validate is Running — expected, ARM-bound wait."
+      echo "[$(ts)] note: log quiet ${logage}m, but an ARM cluster deployment is Running — expected, ARM-bound wait."
     fi
   elif [ "$logage" != "?" ] && [ "$logage" != "-1" ]; then
     if awk -v a="$logage" -v s="$STALE_MINUTES" 'BEGIN{exit !(a>s)}'; then
@@ -92,10 +96,14 @@ check() {
   fi
 
   # --- success ---------------------------------------------------------------
+  # NOTE: cluster-resource presence + validate=Succeeded is NOT completion. The
+  # Microsoft.AzureStackHCI/clusters resource is created BEFORE deployment runs,
+  # so that pair went true at 10:00 on 2026-08-31 while localcluster-deploy still
+  # had ~1h of work left. The authoritative gate is localcluster-deploy.
   cluster=$(az resource list -g "$AZLOCAL_RG" --resource-type Microsoft.AzureStackHCI/clusters \
     --query "[0].name" -o tsv 2>/dev/null || echo "")
-  if [ -n "$cluster" ] && [ "$validate" = "Succeeded" ]; then
-    echo "[$(ts)] Cluster '$cluster' present and validation succeeded."
+  if [ -n "$cluster" ] && [ "$deploy" = "Succeeded" ]; then
+    echo "[$(ts)] Cluster '$cluster' present and localcluster-deploy succeeded."
     az resource list -g "$AZLOCAL_RG" --query "[].{name:name,type:type}" -o table
     return 0
   fi
